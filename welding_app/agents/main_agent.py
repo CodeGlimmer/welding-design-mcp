@@ -1,18 +1,46 @@
+from pathlib import Path
+
 from langchain.agents import create_agent
+from langchain.agents.middleware import SummarizationMiddleware
 from langchain_core.messages.human import HumanMessage
 from langchain_deepseek import ChatDeepSeek
 from langgraph.checkpoint.memory import InMemorySaver
 
+from .main_agent_tools import execute_welding_task
+
 
 def create_main_agent():
+    """创建于外部agent对话的主agent"""
+
+    # 初始化deepseek model
     model = ChatDeepSeek(
         model="deepseek-chat",
         temperature=0.1,
     )
+
+    summarization_prompt_path = (
+        Path(__file__).parent.parent / "prompts" / "to_main_agent" / "summarization.md"
+    )
+    summarization_prompt = summarization_prompt_path.read_text()
+
+    system_prompt_path = (
+        Path(__file__).parent.parent / "prompts" / "to_main_agent" / "task.md"
+    )
+    system_prompt = system_prompt_path.read_text()
+
     agent = create_agent(
         model=model,
-        tools=[],
+        tools=[execute_welding_task],
         checkpointer=InMemorySaver(),
+        system_prompt=system_prompt,
+        middleware=[
+            SummarizationMiddleware(
+                model=model,
+                trigger=("tokens", 24000),
+                keep=("messages", 35),
+                summary_prompt=summarization_prompt,
+            ),
+        ],
     )
     return agent
 
@@ -23,7 +51,7 @@ def main():
         input={"messages": [HumanMessage(content="你好")]},
         config={"configurable": {"thread_id": "1"}},
     )
-    print(res)
+    print(res["messages"][-1].content)
 
 
 if __name__ == "__main__":
