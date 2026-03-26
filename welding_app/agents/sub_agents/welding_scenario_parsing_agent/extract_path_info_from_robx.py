@@ -1,0 +1,3 @@
+def extract_path_info_from_robx(robx_path: str) -> str:
+    """从robx文件中提取path json文件"""
+    ...

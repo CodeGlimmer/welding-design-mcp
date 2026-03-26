@@ -11,6 +11,7 @@
 
 - **WeldingTask (顶级对象)**:
   - `scenario_id` (string, 必填): 关联的具体场景 ID。
+  - `content` (string, 必填): 整体任务的描述，需要站在全局的角度
   - `addtional_info` (string | null, 必填): 额外的任务级信息，没有则填 null。
   - `requirements` (array, 必填): 包含多个 `WeldingRequirement` 对象的列表。
 

@@ -6,7 +6,7 @@ from typing import Annotated, Optional
 from fastmcp import FastMCP
 from pydantic import Field
 
-from welding_app.types.file_transfer_types import (
+from welding_app.server_types.file_transfer_types import (
     FileInfo,
     FilesInfo,
     UploadWeldingScenarioResult,

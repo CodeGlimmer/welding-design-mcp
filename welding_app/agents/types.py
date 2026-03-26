@@ -52,6 +52,12 @@ class WeldingTask(BaseModel):
             description="""此项用于描述场景的ID, 用于关联具体的场景""",
         ),
     ]
+    content: Annotated[
+        str,
+        Field(
+            description="""此项用于描述具体的需求内容, 尽可能详细，并且站在整体任务的角度""",
+        ),
+    ]
     requirements: Annotated[
         list[WeldingRequirement],
         Field(
