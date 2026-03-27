@@ -4,6 +4,10 @@ from langchain.agents import create_agent
 from langchain.agents.structured_output import ToolStrategy
 from langchain_deepseek import ChatDeepSeek
 
+from .parsing_agent_tools import (
+    generate_scenario_builder_toolkit,
+    get_scenario_file_content,
+)
 from .types import ParsingAgentOutput
 
 
@@ -19,7 +23,7 @@ def create_parsing_agent():
 
     agent = create_agent(
         model=model,
-        tools=[],
+        tools=generate_scenario_builder_toolkit().append(get_scenario_file_content),
         system_prompt=system_prompt_path.read_text(),
         response_format=ToolStrategy(ParsingAgentOutput),
     )

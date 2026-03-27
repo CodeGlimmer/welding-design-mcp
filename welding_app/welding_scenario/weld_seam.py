@@ -208,6 +208,25 @@ class GeometryStraightLineModel(BaseModel):
     end_point: GeometryPointModel
     id: str
 
+    @classmethod
+    def from_GeometryStraightLine(
+        cls, line: GeometryStraightLine
+    ) -> "GeometryStraightLineModel":
+        return cls(
+            start_point=GeometryPointModel.from_GeometryPoint(line.start_point),
+            end_point=GeometryPointModel.from_GeometryPoint(line.end_point),
+            id=line._id if line._id else "",
+        )
+
+    def to_GeometryStraightLine(self) -> GeometryStraightLine:
+        start_point = self.start_point.to_GeometryPoint()
+        end_point = self.end_point.to_GeometryPoint()
+        return GeometryStraightLine(
+            start_point=start_point,
+            end_point=end_point,
+            id=self.id,
+        )
+
 
 class WeldSeam:
     # TODO: 完成焊缝建模
@@ -223,6 +242,21 @@ class WeldSeam:
         self._solder_joints = solder_joints
         self._name = name
         self._id = id
+
+    def __repr__(self) -> str:
+        """返回WeldSeam的字符串表示"""
+        return f"WeldSeam(id={self._id}, name={self._name}, length={self.get_seam_length()}, solder_joints={self.get_solder_joints_num()})"
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, WeldSeam):
+            return False
+
+        # 主要比较ID，如果ID相同则认为是同一个焊缝
+        return self._id == other._id
+
+    def __hash__(self) -> int:
+        # 主要使用ID的哈希值
+        return hash(self._id) if self._id is not None else hash(id(self))
 
     def get_solder_joints_num(self) -> int:
         """获取焊缝上的焊点数量"""
@@ -240,4 +274,47 @@ class WeldSeamModel(BaseModel):
         # NOTE: 如果添加新的线型，在此处添加，并移除None
         Union[GeometryStraightLineModel, None], Field(discriminator="type_flag")
     ]
-    solder_joints: set[SolderJointModel]
+    solder_joints: list[SolderJointModel]
+
+    @classmethod
+    def from_WeldSeam(cls, seam: WeldSeam) -> "WeldSeamModel":
+        # 转换几何线
+        line_model = None
+        if isinstance(seam._line, GeometryStraightLine):
+            line_model = GeometryStraightLineModel.from_GeometryStraightLine(seam._line)
+
+        # 转换焊点集合
+        solder_joint_models = []
+        if seam._solder_joints:
+            for solder_joint in seam._solder_joints:
+                solder_joint_models.append(
+                    SolderJointModel.from_SolderJoint(solder_joint)
+                )
+
+        return cls(
+            id=seam._id,
+            name=seam._name,
+            line=line_model,
+            solder_joints=solder_joint_models,
+        )
+
+    def to_WeldSeam(self) -> WeldSeam:
+        # 转换几何线
+        geometry_line = None
+        if self.line and isinstance(self.line, GeometryStraightLineModel):
+            geometry_line = self.line.to_GeometryStraightLine()
+        else:
+            # 如果没有几何线，抛出一个错误或创建一个默认的几何线
+            raise ValueError("焊缝必须包含几何线")
+
+        # 转换焊点集合
+        solder_joint_objects = set()
+        for solder_joint_model in self.solder_joints:
+            solder_joint_objects.add(solder_joint_model.to_SolderJoint())
+
+        return WeldSeam(
+            line=geometry_line,
+            solder_joints=solder_joint_objects,
+            id=self.id,
+            name=self.name,
+        )
