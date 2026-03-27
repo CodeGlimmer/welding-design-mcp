@@ -1,11 +1,16 @@
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Iterator
-from enum import Enum
-from typing import Optional
+from typing import Annotated, Literal, Optional, Union
 
 import numpy as np
+from pydantic import BaseModel, Field
 
-from .solder_joint import GeometryPoint, SolderJoint
+from .solder_joint import (
+    GeometryPoint,
+    GeometryPointModel,
+    SolderJoint,
+    SolderJointModel,
+)
 
 
 class GeometryLine(ABC):
@@ -34,6 +39,12 @@ class GeometryLine(ABC):
         Args:
             num (int): 遍历的点数
         """
+        pass
+
+    @property
+    @abstractmethod
+    def length(self) -> float:
+        """线的长度"""
         pass
 
 
@@ -76,6 +87,11 @@ class GeometryStraightLine(GeometryLine):
     @property
     def is_closed(self) -> bool:
         return False
+
+    @property
+    def length(self) -> float:
+        """线的长度"""
+        return self._end_point.distance_to(self._start_point)
 
     def trave_on_line(self, num: int) -> Iterable[GeometryPoint]:
         return StraightLineIterator(self._start_point, self._end_point, num)
@@ -186,9 +202,11 @@ class GeometryStraightLine(GeometryLine):
         return -buffer <= t <= 1 + buffer
 
 
-class Direction(Enum):
-    START_TO_END = 0
-    END_TO_START = 1
+class GeometryStraightLineModel(BaseModel):
+    type_flag: Literal["GeometryStraightLine"] = "GeometryStraightLine"
+    start_point: GeometryPointModel
+    end_point: GeometryPointModel
+    id: str
 
 
 class WeldSeam:
@@ -196,8 +214,30 @@ class WeldSeam:
     def __init__(
         self,
         line: GeometryLine,
-        solder_joints: Optional[set[SolderJoint]] = None,
+        solder_joints: Optional[set[SolderJoint]] = None,  # 焊缝上的控制点，用于定位
+        id: str | None = None,
+        name: str | None = None,
     ):
         """焊缝类，包含几何的线与定位的焊点集合"""
         self._line = line
         self._solder_joints = solder_joints
+        self._name = name
+        self._id = id
+
+    def get_solder_joints_num(self) -> int:
+        """获取焊缝上的焊点数量"""
+        return len(self._solder_joints) if self._solder_joints else 0
+
+    def get_seam_length(self) -> float:
+        """获取焊缝长度"""
+        return self._line.length
+
+
+class WeldSeamModel(BaseModel):
+    id: Optional[str]
+    name: Optional[str]
+    line: Annotated[
+        # NOTE: 如果添加新的线型，在此处添加，并移除None
+        Union[GeometryStraightLineModel, None], Field(discriminator="type_flag")
+    ]
+    solder_joints: set[SolderJointModel]
