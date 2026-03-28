@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Annotated, Literal, Optional, cast
 
 from langchain.tools import tool
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from welding_app.welding_scenario.materials import WeldingMaterialBIW
 from welding_app.welding_scenario.solder_joint import (
@@ -89,6 +89,7 @@ def generate_scenario_builder_toolkit():
     ToolKit:
         clear_scenario: 初始化场景
         add_solder_joint: 添加一个焊点
+        add_solder_joints: 批量添加多个焊点
         add_weld_seam: 添加一个焊缝
         undo: 撤回
         show_scenario: 将场景转换成basemodel, 供agent整体把握
@@ -151,6 +152,67 @@ def generate_scenario_builder_toolkit():
 
         return "焊点已添加"
 
+    class SolderJointBatchItem(BaseModel):
+        """批量添加焊点的单个焊点数据"""
+
+        position: GeometryPointModel
+        base_material: Optional[list[WeldingMaterialBIW]] = None
+        name: Optional[str] = None
+        surface_normal: Optional[tuple[float, float, float]] = None
+        connected_parts: Optional[list[str]] = None
+        thicknss_combination: Optional[list[float]] = None
+
+    @tool
+    def add_solder_joints(
+        solder_joints: list[SolderJointBatchItem],
+    ) -> str:
+        """
+        批量添加多个焊点到当前场景。
+
+        当从场景文件中解析出多个焊点信息后，可以一次性调用此工具添加所有焊点。
+        比单独多次调用 add_solder_joint 更高效。
+        所有焊点会被作为一个批次添加，调用一次 undo 即可撤回全部。
+
+        Args:
+            solder_joints: 焊点列表，每个焊点包含以下参数：
+                - position: 焊点的三维坐标位置 (x, y, z) 和 id。
+                - base_material: 母材材质列表。
+                - name: 焊点名称。
+                - surface_normal: 焊接表面法线向量 (x, y, z)。
+                - connected_parts: 焊接连接的部件名称列表。
+                - thicknss_combination: 板厚组合列表。
+
+        Returns:
+            字符串 "已批量添加 X 个焊点" 表示成功添加的数量。
+        """
+        nonlocal welding_scenario, welding_scenario_history
+
+        if not welding_scenario:
+            welding_scenario = set()
+
+        added_joints = []
+        for item in solder_joints:
+            solder_joint = SolderJointModel(
+                position=item.position,
+                base_material=item.base_material,
+                name=item.name,
+                surface_normal=item.surface_normal,
+                connected_parts=item.connected_parts,
+                thicknss_combination=item.thicknss_combination,
+            ).to_SolderJoint()
+
+            welding_scenario.add(solder_joint)
+            added_joints.append(solder_joint)
+
+        welding_scenario_history.add_command(
+            Command(
+                action=Action.ADD_SOLDER_JOINT,
+                action_item=added_joints,
+            )
+        )
+
+        return f"已批量添加 {len(added_joints)} 个焊点"
+
     @tool(args_schema=WeldSeamModel)
     def add_weld_seam(
         line: GeometryStraightLineModel,
@@ -158,12 +220,28 @@ def generate_scenario_builder_toolkit():
         id: Optional[str] = None,
         name: Optional[str] = None,
     ):
-        """添加一个焊缝
+        """
+        添加一条焊缝到当前场景。
+
+        当从场景文件中解析出焊缝信息后，调用此工具将焊缝添加到内存中的场景。
+        焊缝包含几何线段和焊点集合。
+
         Args:
-            line: 焊缝的几何线
-            solder_joints: 焊缝上的焊点集合
-            id: 焊缝的唯一标识
-            name: 焊缝名称
+            line: 焊缝的几何线段，定义焊缝的起点和终点。
+                - start_point: 焊缝起点坐标 (x, y, z)。
+                - end_point: 焊缝终点坐标 (x, y, z)。
+                - id: 线段的唯一标识符。
+                如果无法从文件中获取精确的线段信息，此参数可传 None，
+                系统会根据 solder_joints 的位置自动生成一条默认线段。
+            solder_joints: 焊缝上的控制点列表。
+                这些焊点会作为焊缝的定位参考点。
+                注意：这些焊点会同时被添加到场景中，无需单独调用 add_solder_joint。
+                当 line=None 时，系统会根据这些点的位置生成默认线段。
+            id: 焊缝的唯一标识符，用于在场景中区分不同焊缝。
+            name: 焊缝的自定义名称，方便识别，如 "左侧车门焊缝"。
+
+        Returns:
+            字符串 "焊缝已添加" 表示成功添加。
         """
         nonlocal welding_scenario, welding_scenario_history
 
@@ -294,6 +372,7 @@ def generate_scenario_builder_toolkit():
     return [
         clear_scenario,
         add_solder_joint,
+        add_solder_joints,
         add_weld_seam,
         undo,
         show_scenario,

@@ -96,6 +96,21 @@ class GeometryStraightLine(GeometryLine):
     def trave_on_line(self, num: int) -> Iterable[GeometryPoint]:
         return StraightLineIterator(self._start_point, self._end_point, num)
 
+    @classmethod
+    def from_points(
+        cls,
+        points: list[GeometryPoint],
+        id: Optional[str] = None,
+    ) -> "GeometryStraightLine":
+        """从点列表创建直线，使用第一个和最后一个点"""
+        if len(points) < 2:
+            raise ValueError("至少需要两个点来创建直线")
+        return cls(
+            start_point=points[0],
+            end_point=points[-1],
+            id=id,
+        )
+
     def distance_to_line(self, point: GeometryPoint) -> float:
         """计算点到直线的距离
 
@@ -300,12 +315,19 @@ class WeldSeamModel(BaseModel):
 
     def to_WeldSeam(self) -> WeldSeam:
         # 转换几何线
-        geometry_line = None
         if self.line and isinstance(self.line, GeometryStraightLineModel):
             geometry_line = self.line.to_GeometryStraightLine()
         else:
-            # 如果没有几何线，抛出一个错误或创建一个默认的几何线
-            raise ValueError("焊缝必须包含几何线")
+            # 从焊点列表生成默认线段
+            if not self.solder_joints:
+                raise ValueError("焊缝既没有几何线又没有焊点，无法创建")
+
+            # 将 SolderJointModel 转换为 GeometryPoint
+            points = []
+            for sj_model in self.solder_joints:
+                points.append(sj_model.position.to_GeometryPoint())
+
+            geometry_line = GeometryStraightLine.from_points(points)
 
         # 转换焊点集合
         solder_joint_objects = set()
