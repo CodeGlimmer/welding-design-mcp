@@ -23,7 +23,7 @@ def create_parsing_agent():
 
     agent = create_agent(
         model=model,
-        tools=generate_scenario_builder_toolkit().append(get_scenario_file_content),
+        tools=generate_scenario_builder_toolkit() + [get_scenario_file_content],
         system_prompt=system_prompt_path.read_text(),
         response_format=ToolStrategy(ParsingAgentOutput),
     )

@@ -1,0 +1,18 @@
+ai work: 补全一个函数
+
+func:
+    input:
+        robx_path: str
+            robx文件所在路径
+    output:
+        info_content: str
+            输出从robx文件中解压获取得到的Path.json文件的内容
+
+robx文件:
+    本质是一个zip文件，解压后可以得到一个目录，里面包含data目录，在data目录之下包含一个叫做Path.json的文件。
+
+要求：
+要求尽量利用python标准库，不要引入第三方库；
+通过合理的机制处理异常情况，比如返回空字符串表示文件提取失败；
+使用python标准库的unittest进行单元测试，测试目录是项目根目录的test目录，如果不存在则创建它；
+可以用于测试的文件是/Users/tanghuijia/Desktop/点焊.robx

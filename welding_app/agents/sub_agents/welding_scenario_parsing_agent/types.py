@@ -35,6 +35,13 @@ class GetScenarioFileContentOutput(BaseModel):
     content: Annotated[
         str,
         Field(
-            description="场景文件内容，多数情况下表现为json格式，也有txt格式的情况，如果文件类型不支持，则返回提示：‘文件类型不支持’"
+            description="场景文件内容，多数情况下表现为json格式，也有txt格式的情况，如果文件类型不支持，则返回提示：'文件类型不支持',如果robx文件解析失败则会返回'场景文件解析失败'的提示"
         ),
     ] = ""
+
+
+class SaveScenarioOutput(BaseModel):
+    scenario_id: Annotated[str, Field(description="场景UUID")]
+    source_file_id: Annotated[str, Field(description="源文件ID")]
+    solder_joints_count: Annotated[int, Field(description="焊点数量")]
+    weld_seams_count: Annotated[int, Field(description="焊缝数量")]

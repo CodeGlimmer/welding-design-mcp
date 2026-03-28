@@ -1,4 +1,5 @@
 import sqlite3
+import uuid
 from pathlib import Path
 from typing import Annotated, Literal, Optional, cast
 
@@ -16,9 +17,14 @@ from welding_app.welding_scenario.weld_seam import (
     WeldSeam,
     WeldSeamModel,
 )
+from welding_app.welding_scenario.welding_scenario import WeldingScenarioModel
 
 from .command import Action, Command, Commands
-from .types import GetScenarioFileContentOutput
+from .extract_path_info_from_robx import extract_path_json
+from .types import GetScenarioFileContentOutput, SaveScenarioOutput
+
+
+source_file_id: str = ""
 
 
 @tool
@@ -26,7 +32,8 @@ def get_scenario_file_content(
     id: Annotated[str, Field(description="模型ID")],
 ) -> GetScenarioFileContentOutput:
     """获取场景文件内容"""
-    # 检查数据库中是否保存场景
+    global source_file_id
+
     connect = sqlite3.connect(
         Path(__file__).parent.parent.parent.parent
         / "databases"
@@ -45,9 +52,8 @@ def get_scenario_file_content(
     finally:
         connect.close()
     if not file_position:
-        # id 不存在
         return GetScenarioFileContentOutput(id=id, id_exists=False, file_exsits=False)
-    # 测试文件是否存在
+
     file_path = Path(file_position)
     if not file_path.exists():
         return GetScenarioFileContentOutput(
@@ -55,17 +61,19 @@ def get_scenario_file_content(
             id_exists=True,
             file_exsits=False,
         )
-    # 检测文件类型
+
     file_type = file_path.suffix[1:]
-    # 读取文件内容
     match file_type:
         case "txt" | "json":
             content = file_path.read_text()
         case "robx":
-            # TODO: 完成robx解析函数
-            content = ""
+            content = extract_path_json(str(file_path))
+            if not content:
+                content = "场景文件解析失败"
         case _:
             content = "文件类型不支持"
+
+    source_file_id = id
 
     return GetScenarioFileContentOutput(
         id=id,
@@ -83,15 +91,17 @@ def generate_scenario_builder_toolkit():
         add_solder_joint: 添加一个焊点
         add_weld_seam: 添加一个焊缝
         undo: 撤回
-        show_scenatio: 将场景转换成basemodel, 供agent整体把握
+        show_scenario: 将场景转换成basemodel, 供agent整体把握
+        save_scenario: 保存当前场景到数据库
     """
+    global source_file_id
 
-    welding_scenario = set()
+    welding_scenario: set = set()
     welding_scenario_history = Commands(welding_scenario)
 
     @tool
     def clear_scenario() -> str:
-        """清空当前场景, 这是你创建一个新场景时必须首先做的事 x"""
+        """清空当前场景, 这是你创建一个新场景时必须首先做的事"""
         nonlocal welding_scenario
         nonlocal welding_scenario_history
         welding_scenario = set()
@@ -160,7 +170,6 @@ def generate_scenario_builder_toolkit():
         if not welding_scenario:
             welding_scenario = set()
 
-        # 使用WeldSeamModel创建焊缝对象
         weld_seam_model = WeldSeamModel(
             id=id,
             name=name,
@@ -168,7 +177,6 @@ def generate_scenario_builder_toolkit():
             solder_joints=solder_joints,
         )
 
-        # 转换为WeldSeam对象
         weld_seam = weld_seam_model.to_WeldSeam()
 
         welding_scenario.add(weld_seam)
@@ -198,9 +206,6 @@ def generate_scenario_builder_toolkit():
         """显示当前场景的完整信息，返回完整的JSON数据供agent整体把握"""
         nonlocal welding_scenario
 
-        from welding_app.welding_scenario.solder_joint import SolderJointModel
-        from welding_app.welding_scenario.weld_seam import WeldSeamModel
-
         scenario_info = {
             "total_items": len(welding_scenario),
             "solder_joints": [],
@@ -209,9 +214,7 @@ def generate_scenario_builder_toolkit():
 
         for item in welding_scenario:
             if isinstance(item, SolderJoint):
-                # 使用SolderJointModel获取完整的焊点信息
                 solder_joint_model = SolderJointModel.from_SolderJoint(item)
-                # 转换枚举为字符串以确保JSON可序列化
                 full_model_dict = solder_joint_model.model_dump()
                 if full_model_dict.get("base_material"):
                     full_model_dict["base_material"] = [
@@ -235,9 +238,7 @@ def generate_scenario_builder_toolkit():
                     }
                 )
             elif isinstance(item, WeldSeam):
-                # 使用WeldSeamModel获取完整的焊缝信息
                 weld_seam_model = WeldSeamModel.from_WeldSeam(item)
-                # 转换焊缝中的焊点枚举为字符串
                 full_model_dict = weld_seam_model.model_dump()
                 if full_model_dict.get("solder_joints"):
                     for solder_joint in full_model_dict["solder_joints"]:
@@ -259,10 +260,42 @@ def generate_scenario_builder_toolkit():
 
         return scenario_info
 
+    @tool
+    def save_scenario() -> SaveScenarioOutput:
+        """保存当前场景到数据库，返回场景ID"""
+        nonlocal welding_scenario
+
+        scenario_model = WeldingScenarioModel.from_welding_scenario(welding_scenario)
+        scenario_id = str(uuid.uuid4())
+
+        db_path = (
+            Path(__file__).parent.parent.parent.parent
+            / "databases"
+            / "welding_scenarios.db"
+        )
+
+        conn = sqlite3.connect(db_path)
+        try:
+            with conn:
+                conn.execute(
+                    "INSERT INTO welding_scenarios (id, source_file_id, data) VALUES (?, ?, ?)",
+                    (scenario_id, source_file_id, scenario_model.model_dump_json()),
+                )
+        finally:
+            conn.close()
+
+        return SaveScenarioOutput(
+            scenario_id=scenario_id,
+            source_file_id=source_file_id,
+            solder_joints_count=len(scenario_model.solder_joints),
+            weld_seams_count=len(scenario_model.weld_seams),
+        )
+
     return [
         clear_scenario,
         add_solder_joint,
         add_weld_seam,
         undo,
         show_scenario,
+        save_scenario,
     ]
