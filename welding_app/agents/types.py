@@ -1,4 +1,5 @@
 from enum import Enum
+from re import A
 from typing import Annotated, Optional
 
 from pydantic import BaseModel, Field
@@ -67,6 +68,42 @@ class WeldingTask(BaseModel):
     addtional_info: Annotated[
         Optional[str],
         Field(description="""此项用于描述额外的信息, 如果没有则为None"""),
+    ]
+
+
+class TaskState(Enum):
+    PARSING = 0
+    DESIGN = 1
+    SIMULATION = 2
+    FINAL = 3
+
+
+class TaskExcutionResult(BaseModel):
+    """任务执行结果"""
+
+    error: Annotated[
+        bool,
+        Field(
+            description="""此项用于描述任务执行是否出错, 如果出错则为True, 否则为False"""
+        ),
+    ]
+    state: Annotated[
+        TaskState,
+        Field(description="""此项用于描述任务的执行状态, 是一个TaskState枚举值"""),
+    ]
+    error_reason: Annotated[
+        Optional[str],
+        Field(description="""此项用于描述任务执行出错的原因, 如果没有出错则为None"""),
+    ]
+    solution_id: Annotated[
+        Optional[str],
+        Field(
+            description="""此项用于描述任务执行成功后的解决方案ID, 如果没有则为None"""
+        ),
+    ]
+    reply: Annotated[
+        Optional[str],
+        Field(description="""此项用于描述任务执行成功后的回复, 如果没有则为None"""),
     ]
 
 

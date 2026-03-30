@@ -13,15 +13,13 @@ from welding_app.agents.sub_agents.welding_scenario_parsing_agent.extract_path_i
 from .types import ParsedScenarioOutput, ScenarioFileContentOutput
 
 
-@tool(args_schema=ScenarioFileContentOutput)
+@tool
 def get_scenario_file_content(
     id: str,
 ) -> ScenarioFileContentOutput:
     """获取原始场景文件内容"""
     connect = sqlite3.connect(
-        Path(__file__).parent.parent.parent.parent
-        / "databases"
-        / "welding_scenarios.db"
+        Path(__file__).parent.parent.parent.parent / "databases" / "welding_scenario.db"
     )
     file_position = ""
     content = ""
@@ -73,7 +71,7 @@ def get_scenario_file_content(
     )
 
 
-@tool(args_schema=ParsedScenarioOutput)
+@tool
 def get_latest_parsed_scenario(
     source_file_id: str,
 ) -> ParsedScenarioOutput:

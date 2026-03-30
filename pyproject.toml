@@ -16,5 +16,6 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "ipdb>=0.13.13",
     "ipython>=9.11.0",
 ]

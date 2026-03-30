@@ -1,6 +1,5 @@
-from typing import Annotated, Literal, Optional, cast
+from typing import Annotated, Literal, Optional
 
-from langchain.tools import tool
 from pydantic import BaseModel, Field
 
 

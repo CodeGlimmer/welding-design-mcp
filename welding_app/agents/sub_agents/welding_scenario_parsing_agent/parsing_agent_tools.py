@@ -3,6 +3,7 @@ import uuid
 from pathlib import Path
 from typing import Annotated, Literal, Optional, cast
 
+import ipdb
 from langchain.tools import tool
 from pydantic import BaseModel, Field
 
@@ -23,7 +24,6 @@ from .command import Action, Command, Commands
 from .extract_path_info_from_robx import extract_path_json
 from .types import GetScenarioFileContentOutput, SaveScenarioOutput
 
-
 source_file_id: str = ""
 
 
@@ -34,10 +34,9 @@ def get_scenario_file_content(
     """获取场景文件内容"""
     global source_file_id
 
+    ipdb.set_trace()
     connect = sqlite3.connect(
-        Path(__file__).parent.parent.parent.parent
-        / "databases"
-        / "welding_scenarios.db"
+        Path(__file__).parent.parent.parent.parent / "databases" / "welding_scenario.db"
     )
     file_position = ""
     content = ""
@@ -46,7 +45,8 @@ def get_scenario_file_content(
         with connect:
             cursor = connect.cursor()
             res = cursor.execute(
-                "select file_position from local_file where id = ?", (id,)
+                "select file_position from local_file where welding_scenario_id = ?",
+                (id,),
             )
             file_position = res.fetchone()[0]
     finally:
