@@ -1,4 +1,3 @@
-import ipdb
 from langchain.tools import tool
 from langchain_core.messages import HumanMessage
 
@@ -18,7 +17,6 @@ def execute_welding_task(
 ):
     """将焊接任务对象传入该工具，下面会执行该任务"""
 
-    ipdb.set_trace()
     # 场景构建智能体与场景构建检测智能体协同工作，当双方都认为工作完成则进入设计阶段
     parsing_agent = create_parsing_agent()
     parsing_checker = create_checker_agent()

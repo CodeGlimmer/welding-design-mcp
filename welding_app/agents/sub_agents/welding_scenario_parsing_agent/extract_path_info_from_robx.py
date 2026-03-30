@@ -11,7 +11,7 @@ def hex_to_float64(hex_str):
         if not clean_hex:
             return 0.0
         return struct.unpack(">d", bytes.fromhex(clean_hex))[0]
-    except:
+    except Exception:
         return 0.0
 
 

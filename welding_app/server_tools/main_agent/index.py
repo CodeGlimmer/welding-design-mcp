@@ -1,6 +1,5 @@
 from typing import Annotated
 
-import ipdb
 from fastmcp import FastMCP
 from langchain.messages import HumanMessage
 from pydantic import Field
@@ -36,7 +35,6 @@ def register_main_agent_tools(mcp: FastMCP):
         ],
     ) -> MainAgentResponse:
         """设计与主agent对话沟通的功能"""
-        ipdb.set_trace()
         res = main_agent.invoke(
             input={"messages": [HumanMessage(content=message)]},
             config={"configurable": {"thread_id": thread_id}},
