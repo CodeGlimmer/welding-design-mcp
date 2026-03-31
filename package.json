@@ -1,0 +1,26 @@
+{
+  "name": "welding-design-mcp",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "inspect": "mcp-inspector",
+    "clean": "rm -rf node_modules package-lock.json"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CodeGlimmer/welding-design-mcp.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/CodeGlimmer/welding-design-mcp/issues"
+  },
+  "homepage": "https://github.com/CodeGlimmer/welding-design-mcp#readme"
+}

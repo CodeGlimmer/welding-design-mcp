@@ -3,6 +3,7 @@ import uuid
 from pathlib import Path
 from typing import Annotated, Literal, Optional, cast
 
+import ipdb
 from langchain.tools import tool
 from pydantic import BaseModel, Field
 
@@ -32,6 +33,7 @@ def get_scenario_file_content(
 ) -> GetScenarioFileContentOutput:
     """获取场景文件内容"""
     global source_file_id
+    ipdb.set_trace()
 
     connect = sqlite3.connect(
         Path(__file__).parent.parent.parent.parent / "databases" / "welding_scenario.db"

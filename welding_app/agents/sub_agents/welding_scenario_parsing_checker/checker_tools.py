@@ -28,7 +28,8 @@ def get_scenario_file_content(
         with connect:
             cursor = connect.cursor()
             res = cursor.execute(
-                "SELECT file_position FROM local_file WHERE id = ?", (id,)
+                "SELECT file_position FROM local_file WHERE welding_scenario_id = ?",
+                (id,),
             )
             row = res.fetchone()
             if row:

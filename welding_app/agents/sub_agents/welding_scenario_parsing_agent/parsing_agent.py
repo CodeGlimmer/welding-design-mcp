@@ -3,6 +3,7 @@ from pathlib import Path
 from langchain.agents import create_agent
 from langchain.agents.structured_output import ToolStrategy
 from langchain_deepseek import ChatDeepSeek
+from langgraph.checkpoint.memory import InMemorySaver
 
 from .parsing_agent_tools import (
     generate_scenario_builder_toolkit,
@@ -26,6 +27,7 @@ def create_parsing_agent():
         tools=generate_scenario_builder_toolkit() + [get_scenario_file_content],
         system_prompt=system_prompt_path.read_text(),
         response_format=ToolStrategy(ParsingAgentOutput),
+        checkpointer=InMemorySaver(),
     )
 
     return agent

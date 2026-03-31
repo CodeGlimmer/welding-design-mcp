@@ -1,6 +1,7 @@
 from langchain.tools import tool
 from langchain_core.messages import HumanMessage
 
+from .scenario_operations import get_latest_parsed_scenario
 from .sub_agents.welding_scenario_parsing_agent.parsing_agent import (
     create_parsing_agent,
 )
@@ -21,7 +22,7 @@ def execute_welding_task(
     parsing_agent = create_parsing_agent()
     parsing_checker = create_checker_agent()
 
-    conversation_limit = 10
+    conversation_limit = 3
     conversation_time = 0
 
     init_message = HumanMessage(
@@ -60,7 +61,7 @@ def execute_welding_task(
             input={
                 "messages": [
                     HumanMessage(
-                        content=f"""你的反对者对比了原来的文件与你的解析结果，给出了对比报告:
+                        content=f"""你的反对者对比了原来的文件(id为{scenario_id})与你的解析结果，给出了对比报告:
                         {checker_res["structured_response"].diff_report}
                         请根据对比报告修改你的解析结果。
                     """
@@ -75,3 +76,14 @@ def execute_welding_task(
     # TODO: 完善成真正的业务逻辑
     print("场景id：")
     print(pasing_agent_res["structured_response"].parsed_model_id)
+
+    # 获取解析后的场景model
+    scenario_model = get_latest_parsed_scenario(scenario_id)
+    if not scenario_model:
+        return TaskExcutionResult(
+            error=True,
+            state=TaskState.DESIGN,
+            error_reason="设计阶段为能找到解析提取的焊接场景model",
+            reply=None,
+            solution_id=None,
+        )

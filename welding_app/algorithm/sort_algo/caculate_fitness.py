@@ -18,11 +18,3 @@ def caculate_fitness_by_heat(
             + epsilon
         )
     return fitness
-
-
-# TODO: 完成该适应度函数的设计
-# def caculate_fitness_by_symmetry(
-#     sorted_points: list[int], points: dict[int, tuple[float, float, float]]
-# ) -> float:
-#     """计算焊接顺序的对称性适应度, 越小越好"""
-#     pass

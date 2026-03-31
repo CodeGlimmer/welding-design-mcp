@@ -11,3 +11,9 @@ wheels/
 
 # macos
 **/.DS_Store
+
+# nodejs
+node_modules
+
+# mlflow
+exp.db
