@@ -13,8 +13,9 @@ from welding_app.welding_scenario.weld_sequence_plan import (
     WeldSeamSortModel,
     WeldSeamsSortModel,
     SolderJointMixedWeldSeamSortModel,
-    WeldingSequenceSortModel
+    WeldingSequenceSortModel,
 )
+
 
 @tool
 def generate_welding_plan(
@@ -67,16 +68,16 @@ def generate_welding_plan(
             sequence_plan=SolderJointsSortModel(
                 best_fitness=best_fitness,
                 solder_joint_sort=best_joint_sort,
-                best_fitness_history=list(best_history)
+                best_fitness_history=list(best_history),
             )
         )
 
     # 考虑有焊缝的情况
     # step1: 提取焊缝中的焊点，组成新的焊点集合
     seams = scenario_model.weld_seams
-    idx = len(scenario_model.solder_joints) # 新的idx从此出开始
+    idx = len(scenario_model.solder_joints)  # 新的idx从此出开始
     solder_joints = deepcopy(scenario_model.solder_joints)
-    map_dict = dict() # 映射表，方便从下标映射到焊点
+    map_dict = dict()  # 映射表，方便从下标映射到焊点
     for i, point in enumerate(solder_joints):
         map_dict[i] = (
             point.position.x,
@@ -88,11 +89,8 @@ def generate_welding_plan(
             map_dict[idx] = (
                 solder_joint.position.x,
                 solder_joint.position.y,
-                solder_joint.position.z
+                solder_joint.position.z,
             )
             solder_joints.append(solder_joint)
             idx += 1
     best_order, best_fitness, best_history = sort_solder_joints(map_dict)
-
-    
-

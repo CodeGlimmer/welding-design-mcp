@@ -1,5 +1,6 @@
 from langchain.tools import tool
 from langchain_core.messages import HumanMessage
+from sqlalchemy import desc
 
 from .scenario_operations import get_latest_parsed_scenario
 from .sub_agents.welding_scenario_parsing_agent.parsing_agent import (
@@ -12,7 +13,16 @@ from .sub_agents.welding_scenario_parsing_checker.checker_agent import (
 from .types import TaskExcutionResult, TaskState, WeldingTask
 
 
-@tool(args_schema=WeldingTask)
+@tool(
+    args_schema=WeldingTask,
+    description=f"""将焊接任务对象传入该工具，下面会执行该任务
+
+    Returns:
+        返回的对象为TaskExcutionResult:
+            <json-schema>
+                {TaskExcutionResult.model_json_schema()}
+            <json-schema>""",
+)
 def execute_welding_task(
     scenario_id: str, content: str, requirements: list[dict], addtional_info: str | None
 ):

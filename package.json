@@ -9,7 +9,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "inspect": "mcp-inspector",
-    "clean": "rm -rf node_modules package-lock.json"
+    "clean": "rm -rf node_modules package-lock.json",
+    "mcp": "uv run python -m welding_app.servers.mcp_server"
   },
   "repository": {
     "type": "git",
