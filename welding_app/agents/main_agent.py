@@ -1,10 +1,13 @@
-from pathlib import Path
-
 from langchain.agents import create_agent
 from langchain.agents.middleware import SummarizationMiddleware
 from langchain_core.messages.human import HumanMessage
 from langchain_deepseek import ChatDeepSeek
 from langgraph.checkpoint.memory import InMemorySaver
+
+from welding_app.prompts.to_main_agent import (
+    get_summarization_prompt,
+    get_task_prompt,
+)
 
 from .main_agent_tools import execute_welding_task
 
@@ -18,27 +21,17 @@ def create_main_agent():
         temperature=0.1,
     )
 
-    summarization_prompt_path = (
-        Path(__file__).parent.parent / "prompts" / "to_main_agent" / "summarization.md"
-    )
-    summarization_prompt = summarization_prompt_path.read_text()
-
-    system_prompt_path = (
-        Path(__file__).parent.parent / "prompts" / "to_main_agent" / "task.md"
-    )
-    system_prompt = system_prompt_path.read_text()
-
     agent = create_agent(
         model=model,
         tools=[execute_welding_task],
         checkpointer=InMemorySaver(),
-        system_prompt=system_prompt,
+        system_prompt=get_task_prompt(),
         middleware=[
             SummarizationMiddleware(
                 model=model,
                 trigger=("tokens", 24000),
                 keep=("messages", 35),
-                summary_prompt=summarization_prompt,
+                summary_prompt=get_summarization_prompt(),
             ),
         ],
     )
