@@ -7,11 +7,38 @@ from langchain.messages import ToolMessage
 
 
 class ToolErrorCode(Enum):
+    # 文件/资源相关
     ENOENT = "文件不存在"
     EACCES = "权限拒绝"
+    EEXIST = "文件已存在"
+    EREAD = "文件读取失败"
+    EWRITE = "文件写入失败"
+
+    # 数据库相关
+    DB_CONNECTION_FAILED = "数据库连接失败"
+    DB_QUERY_FAILED = "数据库查询失败"
+    DB_WRITE_FAILED = "数据库写入失败"
+
+    # 输入/参数相关
     INVALID_INPUT = "输入格式错误"
+    MISSING_REQUIRED_FIELD = "缺少必需字段"
+    INVALID_FIELD_VALUE = "字段值无效"
+    VALIDATION_FAILED = "数据校验失败"
+
+    # 业务逻辑相关
+    SCENARIO_NOT_FOUND = "场景不存在"
+    RESOURCE_NOT_FOUND = "资源不存在"
+    PARSING_FAILED = "解析失败"
+    CONVERSION_FAILED = "数据转换失败"
+    EMPTY_SCENARIO = "场景为空"
+
+    # 系统相关
     TIMEOUT = "工具超时"
     SIZE_LIMIT = "大小超出限制"
+    MEMORY_LIMIT = "内存超出限制"
+    RESOURCE_BUSY = "资源忙"
+
+    # 通用
     UNKNOWN = "未知错误"
 
 
@@ -80,6 +107,7 @@ def get_tool_error_prompt():
     {ToolExceptionModel.model_json_schema()}
 
     - 工具调用前，我们会使用pydantic对你的输入进行检查，这一部分报错作为反馈信息提供给你，用于改进你的输入，不会作出任何处理
+    - tool的描述中会提供Error字段，如果tool可能报错则会说明，如果不会则不会提供Error，但是不代表它真的不会报错，而是可能作为结果的一部分返回给你
     """
 
 

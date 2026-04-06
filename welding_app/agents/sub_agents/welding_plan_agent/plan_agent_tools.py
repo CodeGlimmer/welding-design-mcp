@@ -23,14 +23,14 @@ from .types import GenerateWeldingPlanInputModel
 @tool(
     args_schema=GenerateWeldingPlanInputModel,
     description=f"""根据场景id获取场景对象，从而对场景中的焊点，焊缝的焊接顺序作出规划
-        
+
         Returns:
             WeldingSequenceSortModel:
                 <json-schema>
                     {WeldingSequenceSortModel.model_json_schema()}
                 <json-schema>
-                
-        Error: 可能发生报错""",
+
+        Error: 可能抛出异常""",
 )
 def generate_welding_plan(scenario_id: str) -> WeldingSequenceSortModel:
     """根据场景id获取场景对象，从而对场景中的焊点，焊缝的焊接顺序作出规划"""
@@ -64,7 +64,7 @@ def generate_welding_plan(scenario_id: str) -> WeldingSequenceSortModel:
             raise ToolException(
                 message="场景为空，无法生成工艺规划",
                 content="场景为空，无法为空场景生成工艺规划",
-                code=ToolErrorCode.UNKNOWN,
+                code=ToolErrorCode.SCENARIO_NOT_FOUND,
                 details="场景中既不存在焊缝，也不存在焊点",
                 input_args=GenerateWeldingPlanInputModel(
                     scenario_id=scenario_id

@@ -3,7 +3,6 @@ import uuid
 from pathlib import Path
 from typing import Annotated, Literal, Optional, cast
 
-import ipdb
 from langchain.tools import tool
 from pydantic import BaseModel, Field
 
@@ -27,13 +26,119 @@ from .types import GetScenarioFileContentOutput, SaveScenarioOutput
 source_file_id: str = ""
 
 
-@tool
-def get_scenario_file_content(
-    id: Annotated[str, Field(description="模型ID")],
-) -> GetScenarioFileContentOutput:
-    """获取场景文件内容"""
+# ============== Input/Output Schemas ==============
+
+class GetScenarioFileContentInput(BaseModel):
+    """tool get_scenario_file_content input schema"""
+    id: Annotated[str, Field(description="场景文件ID，用于查询对应的场景文件")]
+
+
+class ShowScenarioOutput(BaseModel):
+    """tool show_scenario output schema"""
+    total_items: Annotated[int, Field(description="场景中总的项目数量（焊点+焊缝）")]
+    solder_joints: Annotated[list[dict], Field(description="焊点列表，包含每个焊点的详细信息")]
+    weld_seams: Annotated[list[dict], Field(description="焊缝列表，包含每个焊缝的详细信息")]
+
+
+class ClearScenarioInput(BaseModel):
+    """tool clear_scenario input schema（无输入参数）"""
+    pass
+
+
+class ClearScenarioOutput(BaseModel):
+    """tool clear_scenario output schema"""
+    message: Annotated[str, Field(description="操作结果消息")]
+
+
+class UndoInput(BaseModel):
+    """tool undo input schema（无输入参数）"""
+    pass
+
+
+class UndoOutput(BaseModel):
+    """tool undo output schema"""
+    message: Annotated[str, Field(description="操作结果消息")]
+
+
+class SaveScenarioInput(BaseModel):
+    """tool save_scenario input schema（无输入参数）"""
+    pass
+
+
+class SolderJointBatchItemInput(BaseModel):
+    """批量添加焊点的单个焊点数据"""
+    position: GeometryPointModel
+    base_material: Optional[list[WeldingMaterialBIW]] = None
+    name: Optional[str] = None
+    surface_normal: Optional[tuple[float, float, float]] = None
+    connected_parts: Optional[list[str]] = None
+    thicknss_combination: Optional[list[float]] = None
+
+
+class AddSolderJointsInput(BaseModel):
+    """tool add_solder_joints input schema"""
+    solder_joints: Annotated[
+        list[SolderJointBatchItemInput],
+        Field(description="焊点列表，每个焊点包含位置、材料、名称等属性")
+    ]
+
+
+class AddSolderJointInput(BaseModel):
+    """tool add_solder_joint input schema"""
+    position: Annotated[GeometryPointModel, Field(description="焊点位置坐标")]
+    base_material: Annotated[
+        Optional[list[WeldingMaterialBIW]],
+        Field(description="母材材质列表")
+    ] = None
+    name: Annotated[Optional[str], Field(description="焊点名称")] = None
+    surface_normal: Annotated[
+        Optional[tuple[float, float, float]],
+        Field(description="焊接表面法线向量 (x, y, z)")
+    ] = None
+    connected_parts: Annotated[
+        Optional[list[str]],
+        Field(description="焊接连接的部件名称列表")
+    ] = None
+    thicknss_combination: Annotated[
+        Optional[list[float]],
+        Field(description="板厚组合列表")
+    ] = None
+
+
+class AddWeldSeamInput(BaseModel):
+    """tool add_weld_seam input schema"""
+    line: Annotated[
+        GeometryStraightLineModel,
+        Field(description="焊缝的几何线段，定义起点和终点")
+    ]
+    solder_joints: Annotated[
+        list[SolderJointModel],
+        Field(description="焊缝上的控制点列表，作为焊缝的定位参考")
+    ]
+    id: Annotated[Optional[str], Field(description="焊缝的唯一标识符")] = None
+    name: Annotated[Optional[str], Field(description="焊缝的自定义名称")] = None
+
+
+# ============== Tools ==============
+
+@tool(
+    args_schema=GetScenarioFileContentInput,
+    description=f"""根据场景文件ID获取场景文件内容
+
+    根据提供的ID从数据库查询对应的场景文件，并读取文件内容。
+    支持txt、json、robx等文件类型。
+
+    Returns:
+        GetScenarioFileContentOutput:
+            <json-schema>
+                {GetScenarioFileContentOutput.model_json_schema()}
+            <json-schema>
+
+    Note: 无论是否发生错误，均通过统一schema返回。错误情况通过返回对象中的id_exists、file_exsits等字段标识。""",
+)
+def get_scenario_file_content(id: str) -> GetScenarioFileContentOutput:
+    """根据场景文件ID获取场景文件内容"""
     global source_file_id
-    ipdb.set_trace()
 
     connect = sqlite3.connect(
         Path(__file__).parent.parent.parent.parent / "databases" / "welding_scenario.db"
@@ -100,25 +205,32 @@ def generate_scenario_builder_toolkit():
     welding_scenario: set = set()
     welding_scenario_history = Commands(welding_scenario)
 
-    @tool
-    def clear_scenario() -> str:
-        """清空当前场景, 这是你创建一个新场景时必须首先做的事"""
+    @tool(
+        args_schema=ClearScenarioInput,
+        description=f"""清空当前场景
+
+        这是你创建一个新场景时必须首先做的事，用于初始化一个空场景。
+
+        Returns:
+            ClearScenarioOutput:
+                <json-schema>
+                    {ClearScenarioOutput.model_json_schema()}
+                <json-schema>
+
+        Note: 无论是否发生错误，均通过统一schema返回。""",
+    )
+    def clear_scenario() -> ClearScenarioOutput:
+        """清空当前场景"""
         nonlocal welding_scenario
         nonlocal welding_scenario_history
         welding_scenario = set()
         welding_scenario_history = Commands(welding_scenario)
-        return "场景已清空"
+        return ClearScenarioOutput(message="场景已清空")
 
-    @tool(args_schema=SolderJointModel)
-    def add_solder_joint(
-        position: GeometryPointModel,
-        base_material: Optional[list[WeldingMaterialBIW]] = None,
-        name: Optional[str] = None,
-        surface_normal: Optional[tuple[float, float, float]] = None,
-        connected_parts: Optional[list[str]] = None,
-        thicknss_combination: Optional[list[float]] = None,
-    ):
-        """添加一个焊点
+    @tool(
+        args_schema=AddSolderJointInput,
+        description=f"""添加一个焊点到当前场景
+
         Args:
             position: 焊点位置
             base_material: 基础材料
@@ -126,7 +238,21 @@ def generate_scenario_builder_toolkit():
             surface_normal: 表面法线
             connected_parts: 连接的部件
             thicknss_combination: 厚度组合
-        """
+
+        Returns:
+            str: "焊点已添加"
+
+        Note: 无论是否发生错误，均通过统一schema返回。""",
+    )
+    def add_solder_joint(
+        position: GeometryPointModel,
+        base_material: Optional[list[WeldingMaterialBIW]] = None,
+        name: Optional[str] = None,
+        surface_normal: Optional[tuple[float, float, float]] = None,
+        connected_parts: Optional[list[str]] = None,
+        thicknss_combination: Optional[list[float]] = None,
+    ) -> str:
+        """添加一个焊点"""
         nonlocal welding_scenario, welding_scenario_history
 
         if not welding_scenario:
@@ -152,28 +278,20 @@ def generate_scenario_builder_toolkit():
 
         return "焊点已添加"
 
-    class SolderJointBatchItem(BaseModel):
-        """批量添加焊点的单个焊点数据"""
-
-        position: GeometryPointModel
-        base_material: Optional[list[WeldingMaterialBIW]] = None
-        name: Optional[str] = None
-        surface_normal: Optional[tuple[float, float, float]] = None
-        connected_parts: Optional[list[str]] = None
-        thicknss_combination: Optional[list[float]] = None
-
-    @tool
-    def add_solder_joints(
-        solder_joints: list[SolderJointBatchItem],
-    ) -> str:
-        """
-        批量添加多个焊点到当前场景。
+    @tool(
+        args_schema=AddSolderJointsInput,
+        description=f"""批量添加多个焊点到当前场景
 
         当从场景文件中解析出多个焊点信息后，可以一次性调用此工具添加所有焊点。
         比单独多次调用 add_solder_joint 更高效。
         所有焊点会被作为一个批次添加，调用一次 undo 即可撤回全部。
 
-        Args:
+        Returns:
+            str: "已批量添加 X 个焊点"
+
+        Note: 无论是否发生错误，均通过统一schema返回。
+
+        Input:
             solder_joints: 焊点列表，每个焊点包含以下参数：
                 - position: 焊点的三维坐标位置 (x, y, z) 和 id。
                 - base_material: 母材材质列表。
@@ -181,10 +299,12 @@ def generate_scenario_builder_toolkit():
                 - surface_normal: 焊接表面法线向量 (x, y, z)。
                 - connected_parts: 焊接连接的部件名称列表。
                 - thicknss_combination: 板厚组合列表。
-
-        Returns:
-            字符串 "已批量添加 X 个焊点" 表示成功添加的数量。
-        """
+        """,
+    )
+    def add_solder_joints(
+        solder_joints: list[SolderJointBatchItemInput],
+    ) -> str:
+        """批量添加多个焊点到当前场景"""
         nonlocal welding_scenario, welding_scenario_history
 
         if not welding_scenario:
@@ -213,20 +333,19 @@ def generate_scenario_builder_toolkit():
 
         return f"已批量添加 {len(added_joints)} 个焊点"
 
-    @tool(args_schema=WeldSeamModel)
-    def add_weld_seam(
-        line: GeometryStraightLineModel,
-        solder_joints: list[SolderJointModel],
-        id: Optional[str] = None,
-        name: Optional[str] = None,
-    ):
-        """
-        添加一条焊缝到当前场景。
+    @tool(
+        args_schema=AddWeldSeamInput,
+        description=f"""添加一条焊缝到当前场景
 
         当从场景文件中解析出焊缝信息后，调用此工具将焊缝添加到内存中的场景。
         焊缝包含几何线段和焊点集合。
 
-        Args:
+        Returns:
+            str: "焊缝已添加"
+
+        Note: 无论是否发生错误，均通过统一schema返回。
+
+        Input:
             line: 焊缝的几何线段，定义焊缝的起点和终点。
                 - start_point: 焊缝起点坐标 (x, y, z)。
                 - end_point: 焊缝终点坐标 (x, y, z)。
@@ -239,10 +358,15 @@ def generate_scenario_builder_toolkit():
                 当 line=None 时，系统会根据这些点的位置生成默认线段。
             id: 焊缝的唯一标识符，用于在场景中区分不同焊缝。
             name: 焊缝的自定义名称，方便识别，如 "左侧车门焊缝"。
-
-        Returns:
-            字符串 "焊缝已添加" 表示成功添加。
-        """
+        """,
+    )
+    def add_weld_seam(
+        line: GeometryStraightLineModel,
+        solder_joints: list[SolderJointModel],
+        id: Optional[str] = None,
+        name: Optional[str] = None,
+    ) -> str:
+        """添加一条焊缝到当前场景"""
         nonlocal welding_scenario, welding_scenario_history
 
         if not welding_scenario:
@@ -268,27 +392,51 @@ def generate_scenario_builder_toolkit():
 
         return "焊缝已添加"
 
-    @tool
-    def undo() -> str:
+    @tool(
+        args_schema=UndoInput,
+        description=f"""撤回上一步操作
+
+        撤回最近一次添加焊点或焊缝的操作。
+
+        Returns:
+            UndoOutput:
+                <json-schema>
+                    {UndoOutput.model_json_schema()}
+                <json-schema>
+
+        Note: 无论是否发生错误，均通过统一schema返回。""",
+    )
+    def undo() -> UndoOutput:
         """撤回上一步操作"""
         nonlocal welding_scenario, welding_scenario_history
 
         if not welding_scenario_history._commands:
-            return "没有可撤回的操作"
+            return UndoOutput(message="没有可撤回的操作")
 
         welding_scenario_history.undo()
-        return "已撤回上一步操作"
+        return UndoOutput(message="已撤回上一步操作")
 
-    @tool
-    def show_scenario() -> dict:
-        """显示当前场景的完整信息，返回完整的JSON数据供agent整体把握"""
+    @tool(
+        args_schema=ClearScenarioInput,
+        description=f"""显示当前场景的完整信息
+
+        返回完整的JSON数据供agent整体把握当前场景状态。
+        包含焊点和焊缝的详细信息。
+
+        Returns:
+            ShowScenarioOutput:
+                <json-schema>
+                    {ShowScenarioOutput.model_json_schema()}
+                <json-schema>
+
+        Note: 无论是否发生错误，均通过统一schema返回。""",
+    )
+    def show_scenario() -> ShowScenarioOutput:
+        """显示当前场景的完整信息"""
         nonlocal welding_scenario
 
-        scenario_info = {
-            "total_items": len(welding_scenario),
-            "solder_joints": [],
-            "weld_seams": [],
-        }
+        solder_joints_list = []
+        weld_seams_list = []
 
         for item in welding_scenario:
             if isinstance(item, SolderJoint):
@@ -299,7 +447,7 @@ def generate_scenario_builder_toolkit():
                         material.value for material in full_model_dict["base_material"]
                     ]
 
-                scenario_info["solder_joints"].append(
+                solder_joints_list.append(
                     {
                         "id": item.id,
                         "position": item.position,
@@ -326,7 +474,7 @@ def generate_scenario_builder_toolkit():
                                 for material in solder_joint["base_material"]
                             ]
 
-                scenario_info["weld_seams"].append(
+                weld_seams_list.append(
                     {
                         "id": item._id,
                         "name": item._name,
@@ -336,11 +484,28 @@ def generate_scenario_builder_toolkit():
                     }
                 )
 
-        return scenario_info
+        return ShowScenarioOutput(
+            total_items=len(welding_scenario),
+            solder_joints=solder_joints_list,
+            weld_seams=weld_seams_list,
+        )
 
-    @tool
+    @tool(
+        args_schema=SaveScenarioInput,
+        description=f"""保存当前场景到数据库
+
+        将内存中的焊接场景持久化到数据库，返回场景ID。
+
+        Returns:
+            SaveScenarioOutput:
+                <json-schema>
+                    {SaveScenarioOutput.model_json_schema()}
+                <json-schema>
+
+        Note: 无论是否发生错误，均通过统一schema返回。""",
+    )
     def save_scenario() -> SaveScenarioOutput:
-        """保存当前场景到数据库，返回场景ID"""
+        """保存当前场景到数据库"""
         nonlocal welding_scenario
 
         scenario_model = WeldingScenarioModel.from_welding_scenario(welding_scenario)

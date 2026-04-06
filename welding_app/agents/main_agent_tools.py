@@ -15,18 +15,23 @@ from .types import TaskExcutionResult, TaskState, WeldingTask
 
 @tool(
     args_schema=WeldingTask,
-    description=f"""将焊接任务对象传入该工具，下面会执行该任务
+    description=f"""执行焊接任务
+
+    将焊接任务对象传入该工具，启动场景解析和检测的协同工作流程。
+    场景构建智能体与场景构建检测智能体会协同工作，当双方都认为工作完成后进入设计阶段。
 
     Returns:
-        返回的对象为TaskExcutionResult:
+        TaskExcutionResult:
             <json-schema>
                 {TaskExcutionResult.model_json_schema()}
-            <json-schema>""",
+            <json-schema>
+
+    Note: 无论是否发生错误，均通过统一schema返回。错误情况通过返回对象中的error字段标识。""",
 )
 def execute_welding_task(
     scenario_id: str, content: str, requirements: list[dict], addtional_info: str | None
-):
-    """将焊接任务对象传入该工具，下面会执行该任务"""
+) -> TaskExcutionResult:
+    """执行焊接任务"""
 
     # 场景构建智能体与场景构建检测智能体协同工作，当双方都认为工作完成则进入设计阶段
     parsing_agent = create_parsing_agent()
