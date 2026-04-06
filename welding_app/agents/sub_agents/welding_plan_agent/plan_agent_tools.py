@@ -15,19 +15,28 @@ from welding_app.welding_scenario.weld_sequence_plan import (
     SolderJointMixedWeldSeamSortModel,
     WeldingSequenceSortModel,
 )
+from welding_app.error.error_message import ToolException, ToolErrorCode
+
+from .types import GenerateWeldingPlanInputModel
 
 
-@tool
-def generate_welding_plan(
-    scenario_id: Annotated[
-        str,
-        Field(
-            description="场景id，根据此id，tool可以寻找到场景对象，进一步对场景对象中的焊点进行排序"
-        ),
-    ],
-) -> WeldingSequenceSortModel | str:
+@tool(
+    args_schema=GenerateWeldingPlanInputModel,
+    description=f"""根据场景id获取场景对象，从而对场景中的焊点，焊缝的焊接顺序作出规划
+        
+        Returns:
+            WeldingSequenceSortModel:
+                <json-schema>
+                    {WeldingSequenceSortModel.model_json_schema()}
+                <json-schema>
+                
+        Error: 可能发生报错""",
+        
+)
+def generate_welding_plan(scenario_id: str) -> WeldingSequenceSortModel:
     """根据场景id获取场景对象，从而对场景中的焊点，焊缝的焊接顺序作出规划"""
 
+    # 获取json-str格式的场景
     connect = sqlite3.connect(
         Path(__file__).parent.parent.parent.parent.parent
         / "welding_app"
@@ -43,8 +52,6 @@ def generate_welding_plan(
                 (scenario_id,),
             )
             res = res.fetchone()
-            if not res:
-                return "未找到场景"
             res = res[0]
     finally:
         connect.close()
@@ -55,7 +62,17 @@ def generate_welding_plan(
         # 不存在焊缝，纯焊点集合排序
         if not scenario_model.solder_joints:
             # 焊点集合为空
-            return "场景为空，无法生成焊接工艺方案"
+            raise ToolException(
+                message="场景为空，无法生成工艺规划",
+                content="场景为空，无法为空场景生成工艺规划",
+                code=ToolErrorCode.UNKNOWN,
+                details="场景中既不存在焊缝，也不存在焊点",
+                input_args=GenerateWeldingPlanInputModel(
+                    scenario_id=scenario_id
+                ).model_dump(),
+                retryable=False,
+                tool_name="generate_welding_plan",
+            )
         # 建立映射表
         points = dict()
         for idx, point in enumerate(scenario_model.solder_joints):
@@ -94,3 +111,13 @@ def generate_welding_plan(
             solder_joints.append(solder_joint)
             idx += 1
     best_order, best_fitness, best_history = sort_solder_joints(map_dict)
+    best_joint_sort = []
+    for idx in best_order:
+        best_joint_sort.append(scenario_model.solder_joints[idx])
+    return WeldingSequenceSortModel(
+        sequence_plan=SolderJointsSortModel(
+            best_fitness=best_fitness,
+            solder_joint_sort=best_joint_sort,
+            best_fitness_history=list(best_history),
+        )
+    )
