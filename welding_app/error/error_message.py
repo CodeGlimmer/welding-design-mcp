@@ -2,6 +2,8 @@ from typing import Annotated, Optional
 from enum import Enum
 
 from pydantic import BaseModel, Field
+from langchain.agents.middleware import wrap_tool_call
+from langchain.messages import ToolMessage
 
 
 class ToolErrorCode(Enum):
@@ -17,26 +19,23 @@ class ToolExceptionModel(BaseModel):
     """工具异常信息"""
 
     code: Annotated[
-        ToolErrorCode,
-        Field(
-            description='工具错误码，大致对异常类型进行分类'
-        )
+        ToolErrorCode, Field(description="工具错误码，大致对异常类型进行分类")
     ]
     details: Annotated[
         Optional[str],
         Field(
-            description='错误的一些细节，你不能从中获取一些完整的错误原因，但是这里会提供一些细节，或者发现，据此你可以合理的推断更底层的错误'
-        )
+            description="错误的一些细节，你不能从中获取一些完整的错误原因，但是这里会提供一些细节，或者发现，据此你可以合理的推断更底层的错误"
+        ),
     ]
-    input_args: Annotated[
-        Optional[dict],
+    input_args: Annotated[Optional[dict], Field(description="你使用该工具的输入参数")]
+    content: Annotated[str, Field(description="工具报错的主要信息，你因该重点看这里")]
+    tool_name: Annotated[str, Field(description="发生报错的工具名")]
+    retryable: Annotated[
+        bool,
         Field(
-            description='你使用该工具的输入参数'
-        )
+            description="是否可以重新尝试运行，一些错误比如网络异常等是可以多次尝试的，另外的报错比如文件不存在是不可以多次尝试的。某些tool多次调用都发生报错，及时可以重试也不建议"
+        ),
     ]
-    content: Annotated[str, Field(description='工具报错的主要信息，你因该重点看这里')]
-    tool_name: Annotated[str, Field(description='发生报错的工具名')]
-    retryable: Annotated[bool, Field(description='是否可以重新尝试运行，一些错误比如网络异常等是可以多次尝试的，另外的报错比如文件不存在是不可以多次尝试的。某些tool多次调用都发生报错，及时可以重试也不建议')]
 
 
 class ToolException(Exception):
@@ -71,10 +70,28 @@ class ToolException(Exception):
             retryable=self.retryable,
         )
 
+
 def get_tool_error_prompt():
     return f"""# 工具错误
-    当工具运行过程中发生报错时，工具不会按照预定义的output schema返回结果，而是会按照一下格式返回错误信息：
+
+    - 当工具运行过程中发生报错时，工具不会按照预定义的output schema返回结果，而是会按照一下格式返回错误信息：
 
     error-schema:
     {ToolExceptionModel.model_json_schema()}
+
+    - 工具调用前，我们会使用pydantic对你的输入进行检查，这一部分报错作为反馈信息提供给你，用于改进你的输入，不会作出任何处理
     """
+
+
+@wrap_tool_call
+def handle_tool_error(request, handler):
+    """处理工具调用错误"""
+    try:
+        return handler(request)
+    except ToolException as e:
+        return ToolMessage(
+            content=e.to_model().model_dump_json(), tool_call_id=request.tool_call["id"]
+        )
+
+if __name__ == "__main__":
+    print(get_tool_error_prompt())

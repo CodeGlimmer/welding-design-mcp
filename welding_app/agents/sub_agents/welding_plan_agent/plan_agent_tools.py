@@ -31,7 +31,6 @@ from .types import GenerateWeldingPlanInputModel
                 <json-schema>
                 
         Error: 可能发生报错""",
-        
 )
 def generate_welding_plan(scenario_id: str) -> WeldingSequenceSortModel:
     """根据场景id获取场景对象，从而对场景中的焊点，焊缝的焊接顺序作出规划"""
@@ -110,6 +109,8 @@ def generate_welding_plan(scenario_id: str) -> WeldingSequenceSortModel:
             )
             solder_joints.append(solder_joint)
             idx += 1
+
+    # step2: 按照无焊缝的情况规划顺序, 得到纯焊点的规划顺序
     best_order, best_fitness, best_history = sort_solder_joints(map_dict)
     best_joint_sort = []
     for idx in best_order:
@@ -121,3 +122,5 @@ def generate_welding_plan(scenario_id: str) -> WeldingSequenceSortModel:
             best_fitness_history=list(best_history),
         )
     )
+
+    
