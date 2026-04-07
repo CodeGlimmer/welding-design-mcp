@@ -60,3 +60,7 @@ class WeldingSequenceSortModel(BaseModel):
             description="焊接方案序列顺序由两种类型，通过type_flag区分",
         )
     )
+
+
+if __name__ == '__main__':
+    print(WeldingSequenceSortModel.model_json_schema())

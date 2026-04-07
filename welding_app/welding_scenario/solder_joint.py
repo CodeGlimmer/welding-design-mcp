@@ -76,7 +76,6 @@ class GeometryPointModel(BaseModel):
 class SolderJoint(GeometryPoint):
     """焊点对象模型"""
 
-    # TODO: 补充关于焊点的相关内容，以借此实现焊接参数的选择
     def __init__(
         self,
         x: float,
