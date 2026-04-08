@@ -62,5 +62,5 @@ class WeldingSequenceSortModel(BaseModel):
     )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     print(WeldingSequenceSortModel.model_json_schema())

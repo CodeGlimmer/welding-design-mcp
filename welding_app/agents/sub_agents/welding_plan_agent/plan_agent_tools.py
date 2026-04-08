@@ -1,29 +1,29 @@
 import sqlite3
-from pathlib import Path
 from copy import deepcopy
+from pathlib import Path
 
 from langchain.tools import tool
 
 from welding_app.algorithm.sort_algo.solder_joint_sort import sort_solder_joints
 from welding_app.algorithm.sort_algo.welding_seam_sort import (
+    design_single_welding_seam_sort,
     sort_welding_seam,
-    design_single_welding_seam_sort
 )
+from welding_app.error.error_message import ToolErrorCode, ToolException
 from welding_app.welding_scenario.weld_seam import WeldSeamModel
-from welding_app.welding_scenario.welding_scenario import WeldingScenarioModel
 from welding_app.welding_scenario.weld_sequence_plan import (
+    SolderJointMixedWeldSeamSortModel,
     SolderJointsSortModel,
+    WeldingSequenceSortModel,
     WeldSeamSortModel,
     WeldSeamsSortModel,
-    SolderJointMixedWeldSeamSortModel,
-    WeldingSequenceSortModel,
 )
-from welding_app.error.error_message import ToolException, ToolErrorCode
+from welding_app.welding_scenario.welding_scenario import WeldingScenarioModel
 
 from .types import GenerateWeldingPlanInputModel
 
-
 # ============ Helper Functions ============
+
 
 def _determine_sort_axis(point1, point2) -> int:
     """根据两点确定排序坐标轴：返回变化量最大的轴 (0=x, 1=y, 2=z)"""
@@ -56,8 +56,16 @@ def _build_seam_position_map(weld_seams: list[WeldSeamModel]) -> dict[int, tuple
     for idx, welding_seam in enumerate(weld_seams):
         if welding_seam.line:
             idx_to_pos_map[idx] = (
-                (welding_seam.line.start_point.x, welding_seam.line.start_point.y, welding_seam.line.start_point.z),
-                (welding_seam.line.end_point.x, welding_seam.line.end_point.y, welding_seam.line.end_point.z)
+                (
+                    welding_seam.line.start_point.x,
+                    welding_seam.line.start_point.y,
+                    welding_seam.line.start_point.z,
+                ),
+                (
+                    welding_seam.line.end_point.x,
+                    welding_seam.line.end_point.y,
+                    welding_seam.line.end_point.z,
+                ),
             )
             continue
 
@@ -69,7 +77,7 @@ def _build_seam_position_map(weld_seams: list[WeldSeamModel]) -> dict[int, tuple
         start_joint, end_joint = sorted_joints[0], sorted_joints[-1]
         idx_to_pos_map[idx] = (
             (start_joint.position.x, start_joint.position.y, start_joint.position.z),
-            (end_joint.position.x, end_joint.position.y, end_joint.position.z)
+            (end_joint.position.x, end_joint.position.y, end_joint.position.z),
         )
     return idx_to_pos_map
 
@@ -104,7 +112,7 @@ def _build_solder_joints_map(scenario_model: WeldingScenarioModel) -> tuple[dict
             map_dict[next_idx] = (
                 solder_joint.position.x,
                 solder_joint.position.y,
-                solder_joint.position.z
+                solder_joint.position.z,
             )
             solder_joints.append(solder_joint)
             next_idx += 1
@@ -184,7 +192,7 @@ def generate_welding_plan(scenario_id: str) -> WeldingSequenceSortModel:
                 retryable=False,
                 tool_name="generate_welding_plan",
             )
-        # 建立映射表
+        # 只存在焊点集合，建立映射表
         points = dict()
         for idx, point in enumerate(scenario_model.solder_joints):
             points[idx] = (point.position.x, point.position.y, point.position.z)
@@ -219,14 +227,14 @@ def generate_welding_plan(scenario_id: str) -> WeldingSequenceSortModel:
                 solder_joint.position.y,
                 solder_joint.position.z,
             )
-            solder_joints.append(solder_joint) # 将焊缝中的焊点加入原本的焊点集合
+            solder_joints.append(solder_joint)  # 将焊缝中的焊点加入原本的焊点集合
             idx += 1
 
     # step2: 按照无焊缝的情况规划顺序, 得到纯焊点的规划顺序
     best_order, best_fitness, best_history = sort_solder_joints(map_dict)
     best_joint_sort = []
     for idx in best_order:
-            best_joint_sort.append(scenario_model.solder_joints[idx])
+        best_joint_sort.append(scenario_model.solder_joints[idx])
 
     # step3: 对焊缝进行排序
     idx_to_pos_map = dict()
@@ -242,7 +250,7 @@ def generate_welding_plan(scenario_id: str) -> WeldingSequenceSortModel:
                     welding_seam.line.end_point.x,
                     welding_seam.line.end_point.y,
                     welding_seam.line.end_point.z,
-                )
+                ),
             )
             continue
         # 不存在line，则应该在焊点中获取首尾两点作为边界
@@ -264,44 +272,40 @@ def generate_welding_plan(scenario_id: str) -> WeldingSequenceSortModel:
         sorted_joints = sorted(solder_joints, key=_get_sort_key(axis))
         start_joint, end_joint = sorted_joints[0], sorted_joints[-1]
         idx_to_pos_map[idx] = (
-            (
-                start_joint.position.x,
-                start_joint.position.y,
-                start_joint.position.z
-            ),
-            (
-                end_joint.position.x,
-                end_joint.position.y,
-                end_joint.position.z
-            )
+            (start_joint.position.x, start_joint.position.y, start_joint.position.z),
+            (end_joint.position.x, end_joint.position.y, end_joint.position.z),
         )
-    sorted_welding_seam_plan = sort_welding_seam(idx_to_pos_map)        
+    sorted_welding_seam_plan = sort_welding_seam(idx_to_pos_map)
 
     # step4: 对每段焊缝作出划分，给出每段焊缝的焊接顺序
     welding_seam_devides = []
     for welding_seam in scenario_model.weld_seams:
         solder_joints_on_seam = []
         for solder_joint_on_seam in welding_seam.solder_joints:
-            solder_joints_on_seam.append((solder_joint_on_seam.position.x, solder_joint_on_seam.position.y, solder_joint_on_seam.position.z))
+            solder_joints_on_seam.append(
+                (
+                    solder_joint_on_seam.position.x,
+                    solder_joint_on_seam.position.y,
+                    solder_joint_on_seam.position.z,
+                )
+            )
         sorted_devides = design_single_welding_seam_sort(solder_joints_on_seam)
         welding_seam_devides.append(sorted_devides)
-    
+
     # step5: 综合统计给出顺序
     welding_seam_list: list[WeldSeamSortModel] = []
     for seam_idx in sorted_welding_seam_plan:
-        sorted_devide = welding_seam_devides[seam_idx] # 排序后的idx
+        sorted_devide = welding_seam_devides[seam_idx]  # 排序后的idx
         sorted_weld_joint_on_seam = []
         for pair in sorted_devide:
             sorted_weld_joint_on_seam.append(
                 (
                     scenario_model.weld_seams[seam_idx].solder_joints[pair[0]],
-                    scenario_model.weld_seams[seam_idx].solder_joints[pair[1]]
+                    scenario_model.weld_seams[seam_idx].solder_joints[pair[1]],
                 )
             )
         welding_seam_list.append(
-            WeldSeamSortModel(
-                sub_seam_sort=sorted_weld_joint_on_seam
-            )
+            WeldSeamSortModel(sub_seam_sort=sorted_weld_joint_on_seam)
         )
     return WeldingSequenceSortModel(
         sequence_plan=SolderJointMixedWeldSeamSortModel(
@@ -310,13 +314,6 @@ def generate_welding_plan(scenario_id: str) -> WeldingSequenceSortModel:
                 solder_joint_sort=best_joint_sort,
                 best_fitness_history=list(best_history),
             ),
-            weld_seam_sort=WeldSeamsSortModel(
-                welding_seam_sort=welding_seam_list
-            )
+            weld_seam_sort=WeldSeamsSortModel(welding_seam_sort=welding_seam_list),
         )
     )
-
-
-
-    
-    

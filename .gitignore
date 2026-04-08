@@ -17,3 +17,6 @@ node_modules
 
 # mlflow
 exp.db
+
+# 测试脚本
+scripts/
