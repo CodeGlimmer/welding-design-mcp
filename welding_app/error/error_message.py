@@ -1,9 +1,9 @@
-from typing import Annotated, Optional
 from enum import Enum
+from typing import Annotated, Optional
 
-from pydantic import BaseModel, Field
 from langchain.agents.middleware import wrap_tool_call
 from langchain.messages import ToolMessage
+from pydantic import BaseModel, Field
 
 
 class ToolErrorCode(Enum):
@@ -98,8 +98,8 @@ class ToolException(Exception):
         )
 
 
-def get_tool_error_prompt():
-    return f"""# 工具错误
+def get_tool_error_prompt(title_level: int = 1):
+    return f"""{"#" * title_level} 工具错误
 
     - 当工具运行过程中发生报错时，工具不会按照预定义的output schema返回结果，而是会按照一下格式返回错误信息：
 
@@ -120,6 +120,7 @@ def handle_tool_error(request, handler):
         return ToolMessage(
             content=e.to_model().model_dump_json(), tool_call_id=request.tool_call["id"]
         )
+
 
 if __name__ == "__main__":
     print(get_tool_error_prompt())
