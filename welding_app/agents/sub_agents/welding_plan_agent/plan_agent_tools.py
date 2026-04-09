@@ -2,8 +2,10 @@ import sqlite3
 from copy import deepcopy
 from pathlib import Path
 
+from langchain.messages import HumanMessage
 from langchain.tools import tool
 
+from welding_app.agents.sub_agents.rag_agent.rag_agent import create_rag_agent
 from welding_app.algorithm.sort_algo.solder_joint_sort import sort_solder_joints
 from welding_app.algorithm.sort_algo.welding_seam_sort import (
     design_single_welding_seam_sort,
@@ -20,7 +22,7 @@ from welding_app.welding_scenario.weld_sequence_plan import (
 )
 from welding_app.welding_scenario.welding_scenario import WeldingScenarioModel
 
-from .types import GenerateWeldingPlanInputModel
+from .types import GenerateWeldingPlanInputModel, QueryWeldingInformationInputModel
 
 # ============ Helper Functions ============
 
@@ -317,3 +319,40 @@ def generate_welding_plan(scenario_id: str) -> WeldingSequenceSortModel:
             weld_seam_sort=WeldSeamsSortModel(welding_seam_sort=welding_seam_list),
         )
     )
+
+
+@tool(
+    args_schema=QueryWeldingInformationInputModel,
+    description="""从知识库检索焊接基础知识
+
+    Returns:
+        str: 知识库中查询到的焊接知识
+    """,
+)
+def query_welding_infomation(query: str) -> str:
+    """调用rag智能体，从知识库中查询焊接的相关知识"""
+    try:
+        rag_agent = create_rag_agent()
+    except Exception as e:
+        raise ToolException(
+            message=str(e),
+            code=ToolErrorCode.UNKNOWN,
+            details=None,
+            input_args=QueryWeldingInformationInputModel(query=query).model_dump(),
+            content="rag agent初始化失败",
+            tool_name="query_welding_infomation",
+            retryable=False,
+        )
+    try:
+        result = rag_agent.invoke({"messages": [HumanMessage(content=query)]})
+    except Exception as e:
+        raise ToolException(
+            message=str(e),
+            code=ToolErrorCode.UNKNOWN,
+            details=None,
+            input_args=QueryWeldingInformationInputModel(query=query).model_dump(),
+            content="rag agent调用失败",
+            tool_name="query_welding_infomation",
+            retryable=False,
+        )
+    return result["messages"][-1].content

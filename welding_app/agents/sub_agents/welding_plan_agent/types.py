@@ -1,6 +1,6 @@
-from typing import Annotated
 import sqlite3
 from pathlib import Path
+from typing import Annotated
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -38,3 +38,20 @@ class GenerateWeldingPlanInputModel(BaseModel):
         finally:
             connect.close()
         return scenario_id
+
+
+class QueryWeldingInformationInputModel(BaseModel):
+    """tool query_welding_information input schema"""
+
+    query: Annotated[
+        str,
+        Field(
+            description="""查询内容,一个语义清晰，目的完整的句子
+
+            <examples>
+            <example>帮我查找电流与材料之间的关系</example>
+            <example>焊接材料是铝，如何设置焊接电流</example>
+            </examples>
+            """
+        ),
+    ]

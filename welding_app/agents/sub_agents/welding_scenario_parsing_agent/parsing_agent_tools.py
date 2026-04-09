@@ -28,45 +28,58 @@ source_file_id: str = ""
 
 # ============== Input/Output Schemas ==============
 
+
 class GetScenarioFileContentInput(BaseModel):
     """tool get_scenario_file_content input schema"""
+
     id: Annotated[str, Field(description="场景文件ID，用于查询对应的场景文件")]
 
 
 class ShowScenarioOutput(BaseModel):
     """tool show_scenario output schema"""
+
     total_items: Annotated[int, Field(description="场景中总的项目数量（焊点+焊缝）")]
-    solder_joints: Annotated[list[dict], Field(description="焊点列表，包含每个焊点的详细信息")]
-    weld_seams: Annotated[list[dict], Field(description="焊缝列表，包含每个焊缝的详细信息")]
+    solder_joints: Annotated[
+        list[dict], Field(description="焊点列表，包含每个焊点的详细信息")
+    ]
+    weld_seams: Annotated[
+        list[dict], Field(description="焊缝列表，包含每个焊缝的详细信息")
+    ]
 
 
 class ClearScenarioInput(BaseModel):
     """tool clear_scenario input schema（无输入参数）"""
+
     pass
 
 
 class ClearScenarioOutput(BaseModel):
     """tool clear_scenario output schema"""
+
     message: Annotated[str, Field(description="操作结果消息")]
 
 
 class UndoInput(BaseModel):
     """tool undo input schema（无输入参数）"""
+
     pass
 
 
 class UndoOutput(BaseModel):
     """tool undo output schema"""
+
     message: Annotated[str, Field(description="操作结果消息")]
 
 
 class SaveScenarioInput(BaseModel):
     """tool save_scenario input schema（无输入参数）"""
+
     pass
 
 
 class SolderJointBatchItemInput(BaseModel):
     """批量添加焊点的单个焊点数据"""
+
     position: GeometryPointModel
     base_material: Optional[list[WeldingMaterialBIW]] = None
     name: Optional[str] = None
@@ -77,49 +90,49 @@ class SolderJointBatchItemInput(BaseModel):
 
 class AddSolderJointsInput(BaseModel):
     """tool add_solder_joints input schema"""
+
     solder_joints: Annotated[
         list[SolderJointBatchItemInput],
-        Field(description="焊点列表，每个焊点包含位置、材料、名称等属性")
+        Field(description="焊点列表，每个焊点包含位置、材料、名称等属性"),
     ]
 
 
 class AddSolderJointInput(BaseModel):
     """tool add_solder_joint input schema"""
+
     position: Annotated[GeometryPointModel, Field(description="焊点位置坐标")]
     base_material: Annotated[
-        Optional[list[WeldingMaterialBIW]],
-        Field(description="母材材质列表")
+        Optional[list[WeldingMaterialBIW]], Field(description="母材材质列表")
     ] = None
     name: Annotated[Optional[str], Field(description="焊点名称")] = None
     surface_normal: Annotated[
         Optional[tuple[float, float, float]],
-        Field(description="焊接表面法线向量 (x, y, z)")
+        Field(description="焊接表面法线向量 (x, y, z)"),
     ] = None
     connected_parts: Annotated[
-        Optional[list[str]],
-        Field(description="焊接连接的部件名称列表")
+        Optional[list[str]], Field(description="焊接连接的部件名称列表")
     ] = None
     thicknss_combination: Annotated[
-        Optional[list[float]],
-        Field(description="板厚组合列表")
+        Optional[list[float]], Field(description="板厚组合列表")
     ] = None
 
 
 class AddWeldSeamInput(BaseModel):
     """tool add_weld_seam input schema"""
+
     line: Annotated[
-        GeometryStraightLineModel,
-        Field(description="焊缝的几何线段，定义起点和终点")
+        GeometryStraightLineModel, Field(description="焊缝的几何线段，定义起点和终点")
     ]
     solder_joints: Annotated[
         list[SolderJointModel],
-        Field(description="焊缝上的控制点列表，作为焊缝的定位参考")
+        Field(description="焊缝上的控制点列表，作为焊缝的定位参考"),
     ]
     id: Annotated[Optional[str], Field(description="焊缝的唯一标识符")] = None
     name: Annotated[Optional[str], Field(description="焊缝的自定义名称")] = None
 
 
 # ============== Tools ==============
+
 
 @tool(
     args_schema=GetScenarioFileContentInput,
@@ -229,7 +242,7 @@ def generate_scenario_builder_toolkit():
 
     @tool(
         args_schema=AddSolderJointInput,
-        description=f"""添加一个焊点到当前场景
+        description="""添加一个焊点到当前场景
 
         Args:
             position: 焊点位置
@@ -280,7 +293,7 @@ def generate_scenario_builder_toolkit():
 
     @tool(
         args_schema=AddSolderJointsInput,
-        description=f"""批量添加多个焊点到当前场景
+        description="""批量添加多个焊点到当前场景
 
         当从场景文件中解析出多个焊点信息后，可以一次性调用此工具添加所有焊点。
         比单独多次调用 add_solder_joint 更高效。
@@ -335,7 +348,7 @@ def generate_scenario_builder_toolkit():
 
     @tool(
         args_schema=AddWeldSeamInput,
-        description=f"""添加一条焊缝到当前场景
+        description="""添加一条焊缝到当前场景
 
         当从场景文件中解析出焊缝信息后，调用此工具将焊缝添加到内存中的场景。
         焊缝包含几何线段和焊点集合。
