@@ -20,16 +20,16 @@ def create_rag_agent():
 
 
 if __name__ == "__main__":
-    import mlflow
+    # import mlflow
 
-    mlflow.set_tracking_uri("http://127.0.0.1:5000")
-    mlflow.set_experiment("rag version 0")
-    mlflow.autolog()
+    # mlflow.set_tracking_uri("http://127.0.0.1:5000")
+    # mlflow.set_experiment("rag version 0")
+    # mlflow.autolog()
     rag_agent = create_rag_agent()
     result = rag_agent.invoke(
         {
             "messages": [
-                {"role": "user", "content": "帮我查询焊接电流大小与材料的关系"},
+                {"role": "user", "content": "母材为铝，如何确定电流大小"},
             ]
         }
     )

@@ -55,3 +55,36 @@ class QueryWeldingInformationInputModel(BaseModel):
             """
         ),
     ]
+
+
+class GetWeldingScenarioInputModel(BaseModel):
+    """tool get_welding_scenario input schema"""
+
+    scenario_id: Annotated[
+        str,
+        Field(description="传入场景id，本工具会返回焊接场景对象"),
+    ]
+
+    @field_validator("scenario_id")
+    @classmethod
+    def check_id_exists(cls, scenario_id: str):
+        """检查id是否存在"""
+        connect = sqlite3.connect(
+            Path(__file__).parent.parent.parent.parent.parent
+            / "welding_app"
+            / "data"
+            / "welding_scenarios.db"
+        )
+        try:
+            with connect:
+                cursor = connect.cursor()
+                res = cursor.execute(
+                    "select data from welding_scenarios where id = ?",
+                    (scenario_id,),
+                )
+                res = res.fetchone()
+                if not res:
+                    raise ValueError("不存在符合该id的场景")
+        finally:
+            connect.close()
+        return scenario_id
