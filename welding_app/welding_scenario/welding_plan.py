@@ -10,7 +10,9 @@ from .welding_scenario import WeldingScenarioModel
 class WeldingPlanModel(BaseModel):
     """焊接方案完整对象模型"""
 
-    model_config = ConfigDict(validate_assignment=True, populate_by_name=True)
+    model_config = ConfigDict(
+        validate_assignment=True, populate_by_name=True
+    )  # 允许动态修改，并同步提供检查
 
     plan_id: str = Field(..., description="方案唯一标识")
     name: Optional[str] = Field(None, description="方案名称")

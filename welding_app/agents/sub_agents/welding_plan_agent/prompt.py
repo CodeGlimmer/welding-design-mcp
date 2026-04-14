@@ -10,7 +10,9 @@ def system_prompt() -> str:
 
     ## workflow
     1. 获取焊接场景id
-    2. 使用
+    2. 使用场景顺序规划工具(generate_welding_plan)生成一个焊接场景顺序方案
+    3. 获取当前的场景对象，然后审查这个由工具生成的场景焊接顺序方案，如果发现顺序上的不合理之处，你应该对方案进行调整
+    4.
 
     {get_tool_error_prompt(title_level=2)}
     """
@@ -18,4 +20,5 @@ def system_prompt() -> str:
 
 def todo_list_prompt() -> str:
     """TODO 列表提示词"""
-    return """"""
+    return """# TODO列表使用指南
+    """

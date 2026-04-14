@@ -1,8 +1,9 @@
 import sqlite3
+import uuid
 from copy import deepcopy
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
-from typing import Literal
 
 from langchain.messages import HumanMessage
 from langchain.tools import tool
@@ -22,12 +23,14 @@ from welding_app.welding_scenario.weld_sequence_plan import (
     WeldSeamSortModel,
     WeldSeamsSortModel,
 )
+from welding_app.welding_scenario.welding_plan import WeldingPlanModel
 from welding_app.welding_scenario.welding_scenario import WeldingScenarioModel
 
 from .types import (
     GenerateWeldingPlanInputModel,
     GetWeldingScenarioInputModel,
     QueryWeldingInformationInputModel,
+    SetWeldingSortPlanInputModel,
 )
 
 
@@ -215,16 +218,31 @@ def generate_welding_plan(scenario_id: str) -> WeldingSequenceSortModel:
     # step5: 综合统计，组装最终结果
     welding_seam_list: list[WeldSeamSortModel] = []
     for seam_idx in sorted_welding_seam_plan:
+        seam_model = scenario_model.weld_seams[seam_idx]
         sorted_devide = welding_seam_devides[seam_idx]
         sorted_weld_joint_on_seam = [
             (
-                scenario_model.weld_seams[seam_idx].solder_joints[pair[0]],
-                scenario_model.weld_seams[seam_idx].solder_joints[pair[1]],
+                seam_model.solder_joints[pair[0]],
+                seam_model.solder_joints[pair[1]],
             )
             for pair in sorted_devide
         ]
+        if not seam_model.id:
+            raise ToolException(
+                message=f"焊缝索引 {seam_idx} 缺少 ID",
+                content="焊缝缺少 ID 无法继续生成工艺规划",
+                code=ToolErrorCode.NVALID_INPUT,
+                details=None,
+                input_args=GenerateWeldingPlanInputModel(
+                    scenario_id=scenario_id
+                ).model_dump(),
+                retryable=False,
+                tool_name="generate_welding_plan",
+            )
         welding_seam_list.append(
-            WeldSeamSortModel(sub_seam_sort=sorted_weld_joint_on_seam)
+            WeldSeamSortModel(
+                seam_id=seam_model.id, sub_seam_sort=sorted_weld_joint_on_seam
+            )
         )
 
     return WeldingSequenceSortModel(
@@ -309,12 +327,17 @@ def get_welding_scenario(scenario_id: str) -> WeldingScenarioModel:
         )
 
 
+class ScenarioType(Enum):
+    SolderJoints = 0
+    SolderJointMixedWeldSeam = 1
+
+
 @dataclass
 class CurrentWeldingPlanContainer:
-    welding_sort_plan: WeldingSequenceSortModel | None
-    scenario_type: Literal["solder_joints", "solder_joint_mixed_weld_seam"] = (
-        "solder_joints"
-    )
+    welding_scenario: WeldingScenarioModel | None = None  # 当前焊接场景
+    welding_sort_plan: WeldingSequenceSortModel | None = None  # 当前焊接方案顺序
+    scenario_type: ScenarioType = ScenarioType.SolderJoints  # 场景类型
+    welding_plan: WeldingPlanModel | None = None  # 焊接方案: 生成的目标
 
 
 def design_welding_plan_toolkit():
@@ -322,7 +345,7 @@ def design_welding_plan_toolkit():
 
     Tools:
         导航工具
-        set_welding_sort_plan: 设计焊接方案的顺序
+        set_welding_sort_plan: 设计焊接方案的顺序, 初始化参数设计
         next_welding_obj: 获取下一个焊接对象
         previous_welding_obj: 获取上一个焊接对象
         show_current_welding_obj: 显示当前焊接对象
@@ -330,19 +353,52 @@ def design_welding_plan_toolkit():
         参数设计工具
         set_welding_params: 设置焊接参数
 
+        保存工具
+        save_welding_plan: 保存焊接方案
+
     Hooks:
         check_velocity: 检查速度
         check_sort_plan: 检查焊接方案顺序
     """
 
-    _welding_sort_plan = None
+    _welding_plan = CurrentWeldingPlanContainer()
 
     @tool(
+        args_schema=SetWeldingSortPlanInputModel,
         description="""传入完成排序的焊接方案
         系统会将当前被设计的焊接方案指向已经完成排序的焊接方案
-        """
+        """,
     )
-    def set_welding_sort_plan(sort_plan: WeldingSequenceSortModel):
+    def set_welding_sort_plan(
+        sort_plan: WeldingSequenceSortModel, welding_scenario_id: str
+    ) -> str:
         """传入焊接工艺方案的顺序，即generate_welding_plan与agent审核后的结果"""
-        nonlocal _welding_sort_plan
-        _welding_sort_plan = sort_plan
+        _welding_plan.welding_sort_plan = sort_plan
+
+        # 设置焊接类型
+        if sort_plan.sequence_plan.type_flag == "SolderJointsSortModel":
+            _welding_plan.scenario_type = ScenarioType.SolderJoints
+        else:
+            _welding_plan.scenario_type = ScenarioType.SolderJointMixedWeldSeam
+
+        # 绑定具体的焊接场景
+        _welding_plan.welding_scenario = WeldingScenarioModel.model_validate_json(
+            _fetch_scenario_from_db(welding_scenario_id)
+        )
+
+        # 初始化焊接工艺方案
+        _welding_plan.welding_plan = WeldingPlanModel(
+            plan_id=uuid.uuid4().hex,
+            name=None,
+            scenario=_welding_plan.welding_scenario,
+            sequence=_welding_plan.welding_sort_plan,
+        )
+
+        return "焊接工艺顺序已经设定，可以开始设计工艺参数"
+
+        @tool(
+            name="show_current_welding_obj",
+            description="显示当前正在设计的焊接对象",
+        )
+        def show_current_welding_obj() -> str:
+            return ""

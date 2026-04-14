@@ -4,6 +4,8 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field, field_validator
 
+from welding_app.welding_scenario.weld_sequence_plan import WeldingSequenceSortModel
+
 
 class GenerateWeldingPlanInputModel(BaseModel):
     """tool generate_welding_plan input schema"""
@@ -66,6 +68,47 @@ class GetWeldingScenarioInputModel(BaseModel):
     ]
 
     @field_validator("scenario_id")
+    @classmethod
+    def check_id_exists(cls, scenario_id: str):
+        """检查id是否存在"""
+        connect = sqlite3.connect(
+            Path(__file__).parent.parent.parent.parent.parent
+            / "welding_app"
+            / "data"
+            / "welding_scenarios.db"
+        )
+        try:
+            with connect:
+                cursor = connect.cursor()
+                res = cursor.execute(
+                    "select data from welding_scenarios where id = ?",
+                    (scenario_id,),
+                )
+                res = res.fetchone()
+                if not res:
+                    raise ValueError("不存在符合该id的场景")
+        finally:
+            connect.close()
+        return scenario_id
+
+
+class SetWeldingSortPlanInputModel(BaseModel):
+    """tool set_welding_sort_plan input schema"""
+
+    sort_plan: Annotated[
+        WeldingSequenceSortModel,
+        Field(description="传入完成排序的焊接方案"),
+    ]
+    welding_scenario_id: Annotated[
+        str,
+        Field(
+            description="""传入场景id
+            本工具会将当前被设计的焊接方案指向已经完成排序的焊接方案，
+            同时在展示当前焊接对象时提供更丰富的信息"""
+        ),
+    ]
+
+    @field_validator("welding_scenario_id")
     @classmethod
     def check_id_exists(cls, scenario_id: str):
         """检查id是否存在"""

@@ -10,7 +10,7 @@ from .plan_agent_tools import generate_welding_plan, query_welding_infomation
 
 def create_plan_agent():
 
-    model = ChatDeepSeek(model="deepseek-chat", temperature=0.1)
+    model = ChatDeepSeek(model="deepseek-chat", temperature=0.1, top_p=0.2)
 
     plan_agent = create_agent(
         model=model,
