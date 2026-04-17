@@ -1,4 +1,4 @@
-from typing import Annotated, Any, Dict, Optional, Union
+from typing import Annotated, Any, Dict, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -32,28 +32,90 @@ class BaseProcessParams(BaseModel):
 class SpotWeldingParams(BaseProcessParams):
     """点焊工艺参数"""
 
+    type_flag: Literal["spot_welding"] = Field(..., description="工艺类型标识")
     process_type: WeldingProcessType = WeldingProcessType.SPOT_WELDING
-    current_ka: float = Field(..., description="焊接电流 (kA)")
-    pressure_kn: float = Field(..., description="电极压力 (kN)")
-    weld_time_ms: int = Field(..., description="焊接时间 (ms)")
-    pre_pressure_time_ms: Optional[int] = Field(None, description="预压时间")
-    hold_time_ms: Optional[int] = Field(None, description="维持时间")
+    current_ka: Annotated[
+        float,
+        Field(
+            default=8.0,
+            description="焊接电流，单位：千安 (kA)，常见范围 2-15 kA（视材料厚度而定）",
+        ),
+    ]
+    pressure_kn: Annotated[
+        float,
+        Field(
+            default=3.0,
+            description="电极压力，单位：千牛 (kN)，常见范围 1-6 kN",
+        ),
+    ]
+    weld_time_ms: Annotated[
+        int,
+        Field(
+            default=200,
+            description="焊接时间（通电时间），单位：毫秒 (ms)，常见范围 100-500 ms",
+        ),
+    ]
+    pre_pressure_time_ms: Annotated[
+        Optional[int],
+        Field(
+            default=100,
+            description="预压时间（电极接触工件到通电前的时间），单位：毫秒 (ms)",
+        ),
+    ]
+    hold_time_ms: Annotated[
+        Optional[int],
+        Field(
+            default=150,
+            description="维持时间（断电后电极保持压力的时间），单位：毫秒 (ms)",
+        ),
+    ]
 
 
 class ContinuousWeldingParams(BaseProcessParams):
     """连续焊工艺参数（适用于弧焊、激光焊）"""
 
-    voltage_v: float = Field(..., description="焊接电压 (V)")
-    current_a: float = Field(..., description="焊接电流 (A)")
-    speed_mms: float = Field(..., description="焊接速度 (mm/s)")
-    wire_feed_speed_mmin: Optional[float] = Field(None, description="送丝速度 (m/min)")
-    gas_flow_lmin: Optional[float] = Field(None, description="保护气流量 (L/min)")
+    type_flag: Literal["continuous_welding"] = Field(..., description="工艺类型标识")
+    voltage_v: Annotated[
+        float,
+        Field(
+            default=22.0,
+            description="焊接电压，单位：伏特 (V)，常见范围 18-32 V",
+        ),
+    ]
+    current_a: Annotated[
+        float,
+        Field(
+            default=180.0,
+            description="焊接电流，单位：安培 (A)，常见范围 80-300 A",
+        ),
+    ]
+    speed_mms: Annotated[
+        float,
+        Field(
+            default=5.0,
+            description="焊接速度，单位：毫米/秒 (mm/s)，常见范围 2-15 mm/s",
+        ),
+    ]
+    wire_feed_speed_mmin: Annotated[
+        Optional[float],
+        Field(
+            default=6.0,
+            description="送丝速度，单位：米/分钟 (m/min)，常见范围 3-12 m/min",
+        ),
+    ]
+    gas_flow_lmin: Annotated[
+        Optional[float],
+        Field(
+            default=15.0,
+            description="保护气流量，单位：升/分钟 (L/min)，常见范围 10-25 L/min",
+        ),
+    ]
 
 
 # 使用 Union 组合多态参数
 ProcessParamsUnion = Annotated[
     Union[SpotWeldingParams, ContinuousWeldingParams],
-    Field(discriminator="process_type"),
+    Field(discriminator="type_flag"),
 ]
 
 

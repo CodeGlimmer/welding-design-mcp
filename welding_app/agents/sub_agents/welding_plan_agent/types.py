@@ -1,9 +1,12 @@
 import sqlite3
+from enum import Enum
 from pathlib import Path
 from typing import Annotated
 
 from pydantic import BaseModel, Field, field_validator
 
+from welding_app.welding_scenario.process_parameters import ProcessParamsUnion
+from welding_app.welding_scenario.solder_joint import SolderJointModel
 from welding_app.welding_scenario.weld_sequence_plan import WeldingSequenceSortModel
 
 
@@ -131,3 +134,55 @@ class SetWeldingSortPlanInputModel(BaseModel):
         finally:
             connect.close()
         return scenario_id
+
+
+class CurrentState(Enum):
+    START = "起始对象"
+    END = "结束对象"
+    MIDDLE = "中间对象"
+    NONE = "无效对象"
+
+
+class ShowCurrentWeldingObjectOutputModel(BaseModel):
+    """tool show_current_welding_object output schema"""
+
+    state: Annotated[
+        CurrentState,
+        Field(
+            description="当前对象的状态，如果注意到当前对象是边界上的对象且仍然执行了超出边界的操作，那么当前对象不会改变"
+        ),
+    ]
+    current_object: Annotated[
+        SolderJointModel | tuple[SolderJointModel, SolderJointModel],
+        Field(
+            description="""当前对象
+            可能是一个 solder joint 或者一个 solder joint 对
+            - 如果是一个solder_joint则就是单纯的焊点，不存在parent_object
+            - 如果是一个solder_joint对, 那么就是方向从第一个焊点到第二个焊点的短焊缝，会存在一个parent_object，也就是整体焊缝
+            即使是一个焊缝，它的焊接也是分段的，这里的solder_joint对就是一个焊缝中的子分段"""
+        ),
+    ]
+    parent_object_id: Annotated[
+        str | None,
+        Field(
+            description="如果当前对象是焊点，则不存在该项；否则该项表示整体焊缝的id，通过id，你可以从整体的焊接场景中定位到这条焊缝"
+        ),
+    ]
+
+
+class SetWeldingParamsInputModel(BaseModel):
+    """根据焊接工艺对象的类型，设置焊接工艺参数"""
+
+    process_params: ProcessParamsUnion
+
+
+class SaveWeldingPlanInputModel(BaseModel):
+    """保存焊接方案"""
+
+    plan_name: Annotated[str, Field(description="名称焊接方案的名称，要求简短易识别")]
+
+
+class SaveWeldingPlanOutputModel(BaseModel):
+    """保存焊接方案的输出"""
+
+    plan_id: Annotated[str, Field(description="保存成功后返回的焊接方案id")]

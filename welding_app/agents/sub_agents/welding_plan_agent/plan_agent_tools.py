@@ -1,3 +1,4 @@
+import json
 import sqlite3
 import uuid
 from copy import deepcopy
@@ -15,22 +16,34 @@ from welding_app.algorithm.sort_algo.welding_seam_sort import (
     sort_welding_seam,
 )
 from welding_app.error.error_message import ToolErrorCode, ToolException
+from welding_app.welding_scenario.process_parameters import (
+    ProcessParamsUnion,
+)
 from welding_app.welding_scenario.weld_seam import WeldSeamModel
 from welding_app.welding_scenario.weld_sequence_plan import (
     SolderJointMixedWeldSeamSortModel,
     SolderJointsSortModel,
+    WeldingSequenceNavigator,
     WeldingSequenceSortModel,
     WeldSeamSortModel,
     WeldSeamsSortModel,
 )
-from welding_app.welding_scenario.welding_plan import WeldingPlanModel
+from welding_app.welding_scenario.welding_plan import (
+    ProcessAssignmentModel,
+    WeldingPlanModel,
+)
 from welding_app.welding_scenario.welding_scenario import WeldingScenarioModel
 
 from .types import (
+    CurrentState,
     GenerateWeldingPlanInputModel,
     GetWeldingScenarioInputModel,
     QueryWeldingInformationInputModel,
+    SaveWeldingPlanInputModel,
+    SaveWeldingPlanOutputModel,
+    SetWeldingParamsInputModel,
     SetWeldingSortPlanInputModel,
+    ShowCurrentWeldingObjectOutputModel,
 )
 
 
@@ -338,6 +351,7 @@ class CurrentWeldingPlanContainer:
     welding_sort_plan: WeldingSequenceSortModel | None = None  # 当前焊接方案顺序
     scenario_type: ScenarioType = ScenarioType.SolderJoints  # 场景类型
     welding_plan: WeldingPlanModel | None = None  # 焊接方案: 生成的目标
+    nav: WeldingSequenceNavigator | None = None
 
 
 def design_welding_plan_toolkit():
@@ -367,6 +381,9 @@ def design_welding_plan_toolkit():
         args_schema=SetWeldingSortPlanInputModel,
         description="""传入完成排序的焊接方案
         系统会将当前被设计的焊接方案指向已经完成排序的焊接方案
+
+        Returns:
+            str: 返回“焊接工艺顺序已经设定，可以开始设计工艺参数”的提示
         """,
     )
     def set_welding_sort_plan(
@@ -374,6 +391,7 @@ def design_welding_plan_toolkit():
     ) -> str:
         """传入焊接工艺方案的顺序，即generate_welding_plan与agent审核后的结果"""
         _welding_plan.welding_sort_plan = sort_plan
+        _welding_plan.nav = WeldingSequenceNavigator(sort_plan)
 
         # 设置焊接类型
         if sort_plan.sequence_plan.type_flag == "SolderJointsSortModel":
@@ -396,9 +414,354 @@ def design_welding_plan_toolkit():
 
         return "焊接工艺顺序已经设定，可以开始设计工艺参数"
 
-        @tool(
-            name="show_current_welding_obj",
-            description="显示当前正在设计的焊接对象",
+    @tool(
+        description=f"""显示当前正在设计的焊接对象
+
+        Returns:
+            ShowCurrentWeldingObjectOutputModel:
+                <json-schema>
+                    {ShowCurrentWeldingObjectOutputModel.model_json_schema()}
+                </json-schema>""",
+    )
+    def show_current_welding_obj() -> ShowCurrentWeldingObjectOutputModel:
+        """展示当前的焊接对象（焊点，焊缝），提供参数信息，agent借此推断使用怎样的参数组合"""
+        if not _welding_plan.nav:
+            raise ToolException(
+                message="当前没有正在设计的焊接对象",
+                code=ToolErrorCode.RESOURCE_NOT_FOUND,
+                details="可能为正确调用set_welding_sort_plan",
+                input_args=None,
+                content="当前没有正在设计的对象",
+                tool_name="show_current_welding_obj",
+                retryable=False,
+            )
+        current_obj = _welding_plan.nav.current()
+        if not current_obj:
+            raise ToolException(
+                message="当前没有正在设计的焊接对象",
+                code=ToolErrorCode.RESOURCE_NOT_FOUND,
+                details="整体的焊接顺序方案没问题，但是为找到当前被设计的对象",
+                input_args=None,
+                content="当前没有正在设计的对象",
+                tool_name="show_current_welding_obj",
+                retryable=False,
+            )
+        # 对象有效
+        state = None
+        idx = _welding_plan.nav._current_index
+        if idx == 0:
+            state = CurrentState.START
+        elif idx == _welding_plan.nav.total_count() - 1:
+            state = CurrentState.END
+        else:
+            state = CurrentState.MIDDLE
+        if current_obj.task_type == "solder_joint":
+            # 类型为单纯的焊点
+            return ShowCurrentWeldingObjectOutputModel(
+                state=state,
+                current_object=current_obj.solder_joint,  # type: ignore
+                parent_object_id=None,
+            )
+        return ShowCurrentWeldingObjectOutputModel(
+            state=state,
+            current_object=current_obj.sub_seam,  # type: ignore
+            parent_object_id=current_obj.seam_id,
         )
-        def show_current_welding_obj() -> str:
-            return ""
+
+    @tool(description="切换到下一个焊接对象，同时提供提示，本工具不会产生报错")
+    def next_welding_obj() -> str:
+        """切换到下一个焊接对象"""
+        if not _welding_plan.nav:
+            return "没有可切换的对象"
+        if _welding_plan.nav.is_end():
+            return "已经是最后一个对象，无法切换"
+        _welding_plan.nav.next()
+        return "切换到下一个焊接对象成功"
+
+    @tool(description="切换到上一个对象, 并给出提示，本工具不会报错")
+    def prev_welding_obj() -> str:
+        """切换到上一个焊接对象"""
+        if not _welding_plan.nav:
+            return "没有可切换的对象"
+        if _welding_plan.nav._current_index == 0:
+            return "已经是第一个对象，无法切换"
+        _welding_plan.nav.prev()
+        return "切换到上一个焊接对象成功"
+
+    @tool(
+        args_schema=SetWeldingParamsInputModel,
+        description="""设置焊接工艺参数
+        根据焊接对象的类型，本工具提供了为两种焊接工艺提供工艺参数的方法
+        Returns: 返回设置成功的提示
+        Error: 本工具可能失败""",
+    )
+    def set_welding_params(process_params: ProcessParamsUnion) -> str:
+        process_type = process_params.type_flag
+        if process_type == "spot_welding":
+            # 设置点焊的工艺参数
+            try:
+                process = ProcessAssignmentModel(
+                    entity_id=_welding_plan.nav.current().solder_joint.position.id,  # type: ignore
+                    params=process_params,
+                )
+            except Exception as e:
+                raise ToolException(
+                    message=str(e),
+                    code=ToolErrorCode.UNKNOWN,
+                    details="此处的错误原因较为复杂，请检查对象类型与工艺类型是否匹配，或者别的原因",
+                    input_args=SetWeldingParamsInputModel(
+                        process_params=process_params
+                    ).model_dump(),
+                    content="处理错误，原因较为复杂，请仔细检查分析",
+                    tool_name="set_welding_params",
+                    retryable=False,
+                )
+            if not _welding_plan.welding_plan:
+                raise ToolException(
+                    message="没有设置焊接方案，无法设置焊接参数",
+                    code=ToolErrorCode.UNKNOWN,
+                    details="可能初始化时有问题",
+                    input_args=None,
+                    content="不存在焊接方案",
+                    tool_name="set_welding_params",
+                    retryable=False,
+                )
+            # 如果列表中不存在该项，则创建此项，否则应该覆盖
+            for i, p in enumerate(_welding_plan.welding_plan.process_assignments):
+                if p.entity_id == process.entity_id:
+                    _welding_plan.welding_plan.process_assignments[i] = process
+                    break
+            else:
+                _welding_plan.welding_plan.process_assignments.append(process)
+            return "焊点焊接参数已经设置成功"
+        # 子焊缝工艺参数设置
+        elif process_type == "continuous_welding":
+            # 设置子焊缝的工艺参数
+            try:
+                current_task = _welding_plan.nav.current()  # type: ignore
+                if not current_task or current_task.task_type != "sub_seam":
+                    raise ValueError("当前任务不是子焊缝，无法设置连续焊参数")
+
+                process = ProcessAssignmentModel(
+                    entity_id=current_task.param_entity_id,
+                    params=process_params,
+                )
+            except Exception as e:
+                raise ToolException(
+                    message=str(e),
+                    code=ToolErrorCode.UNKNOWN,
+                    details="子焊缝参数设置错误，请检查当前任务类型",
+                    input_args=SetWeldingParamsInputModel(
+                        process_params=process_params
+                    ).model_dump(),
+                    content="子焊缝参数设置失败",
+                    tool_name="set_welding_params",
+                    retryable=False,
+                )
+            if not _welding_plan.welding_plan:
+                raise ToolException(
+                    message="没有设置焊接方案，无法设置焊接参数",
+                    code=ToolErrorCode.UNKNOWN,
+                    details="可能初始化时有问题",
+                    input_args=None,
+                    content="不存在焊接方案",
+                    tool_name="set_welding_params",
+                    retryable=False,
+                )
+            # 如果列表中不存在该项，则创建此项，否则应该覆盖
+            for i, p in enumerate(_welding_plan.welding_plan.process_assignments):
+                if p.entity_id == process.entity_id:
+                    _welding_plan.welding_plan.process_assignments[i] = process
+                    break
+            else:
+                _welding_plan.welding_plan.process_assignments.append(process)
+            return "子焊缝焊接参数已经设置成功"
+        else:
+            raise ToolException(
+                message=f"不支持的工艺类型: {process_type}",
+                code=ToolErrorCode.UNKNOWN,
+                details="只支持 spot_welding 和 continuous_welding 类型",
+                input_args=SetWeldingParamsInputModel(
+                    process_params=process_params
+                ).model_dump(),
+                content="工艺类型不支持",
+                tool_name="set_welding_params",
+                retryable=False,
+            )
+
+    @tool(
+        args_schema=SaveWeldingPlanInputModel,
+        description=f"""# 保存焊接方案
+
+        Returns:
+            SaveWeldingPlanOutputModel:
+                <json-schema>
+                    {SaveWeldingPlanOutputModel.model_json_schema()}
+                </json-schema>
+
+        Error: 不会发生报错
+        """,
+    )
+    def save_welding_plan(plan_name: str) -> SaveWeldingPlanOutputModel:
+        """保存焊接方案"""
+        # 检查是否有可保存的焊接方案
+        if not _welding_plan.welding_plan:
+            raise ToolException(
+                message="没有可保存的焊接方案",
+                content="当前没有正在设计的焊接方案，请先设计焊接方案",
+                code=ToolErrorCode.RESOURCE_NOT_FOUND,
+                details="可能未调用 set_welding_sort_plan 或 generate_welding_plan",
+                input_args=SaveWeldingPlanInputModel(plan_name=plan_name).model_dump(),
+                tool_name="save_welding_plan",
+                retryable=False,
+            )
+
+        # 检查焊接方案是否完整
+        if not _welding_plan.welding_plan.scenario:
+            raise ToolException(
+                message="焊接方案不完整，缺少场景信息",
+                content="焊接方案缺少场景信息，无法保存",
+                code=ToolErrorCode.NVALID_INPUT,
+                details="焊接方案的 scenario 字段为空",
+                input_args=SaveWeldingPlanInputModel(plan_name=plan_name).model_dump(),
+                tool_name="save_welding_plan",
+                retryable=False,
+            )
+
+        if not _welding_plan.welding_plan.sequence:
+            raise ToolException(
+                message="焊接方案不完整，缺少顺序信息",
+                content="焊接方案缺少顺序信息，无法保存",
+                code=ToolErrorCode.NVALID_INPUT,
+                details="焊接方案的 sequence 字段为空",
+                input_args=SaveWeldingPlanInputModel(plan_name=plan_name).model_dump(),
+                tool_name="save_welding_plan",
+                retryable=False,
+            )
+
+        try:
+            # 设置方案名称
+            _welding_plan.welding_plan.name = plan_name
+
+            # 如果 plan_id 不存在，生成新的
+            if not _welding_plan.welding_plan.plan_id:
+                _welding_plan.welding_plan.plan_id = uuid.uuid4().hex
+
+            # 获取场景ID - 从 welding_scenario 中获取（如果有）
+            # 注意：WeldingScenarioModel 本身没有 scenario_id 字段
+            # 场景ID是在调用 set_welding_sort_plan 时传入的 welding_scenario_id
+            scenario_id = ""
+            # 我们可以尝试从当前容器的 welding_scenario 属性中获取
+            if _welding_plan.welding_scenario:
+                # 尝试从场景的焊点或焊缝中提取ID
+                if _welding_plan.welding_scenario.solder_joints:
+                    # 使用第一个焊点的ID作为参考
+                    scenario_id = (
+                        _welding_plan.welding_scenario.solder_joints[0].position.id[:8]
+                        + "..."
+                    )
+
+            # 序列化数据
+            full_data_json = _welding_plan.welding_plan.model_dump_json()
+            scenario_json = _welding_plan.welding_plan.scenario.model_dump_json()
+            sequence_json = _welding_plan.welding_plan.sequence.model_dump_json()
+
+            # 序列化工艺分配表 - 使用 model_dump_json 确保一致性
+            process_assignments_list = [
+                assignment.model_dump()
+                for assignment in _welding_plan.welding_plan.process_assignments
+            ]
+            process_assignments_json = json.dumps(process_assignments_list)
+
+            # 构建数据库路径 - 修正路径
+            db_path = (
+                Path(__file__).parent.parent.parent.parent  # 回到 welding_app 目录
+                / "databases"
+                / "welding_plan.db"
+            )
+
+            # 确保数据库目录存在
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # 连接数据库并保存
+            conn = sqlite3.connect(db_path)
+            try:
+                cursor = conn.cursor()
+
+                # 创建表（如果不存在）
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS welding_plans (
+                        plan_id TEXT PRIMARY KEY,
+                        name TEXT,
+                        scenario_id TEXT,
+                        full_data_json TEXT NOT NULL,
+                        scenario_json TEXT NOT NULL,
+                        sequence_json TEXT NOT NULL,
+                        process_assignments_json TEXT NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+
+                # 插入数据
+                cursor.execute(
+                    """
+                    INSERT INTO welding_plans
+                    (plan_id, name, scenario_id, full_data_json, scenario_json, sequence_json, process_assignments_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                    (
+                        _welding_plan.welding_plan.plan_id,
+                        plan_name,
+                        scenario_id,
+                        full_data_json,
+                        scenario_json,
+                        sequence_json,
+                        process_assignments_json,
+                    ),
+                )
+
+                conn.commit()
+
+                # 返回结果
+                return SaveWeldingPlanOutputModel(
+                    plan_id=_welding_plan.welding_plan.plan_id
+                )
+
+            except sqlite3.Error as e:
+                conn.rollback()
+                raise ToolException(
+                    message=f"数据库操作失败: {str(e)}",
+                    content="保存焊接方案到数据库时发生错误",
+                    code=ToolErrorCode.DB_WRITE_FAILED,
+                    details=f"SQLite错误: {str(e)}",
+                    input_args=SaveWeldingPlanInputModel(
+                        plan_name=plan_name
+                    ).model_dump(),
+                    tool_name="save_welding_plan",
+                    retryable=True,
+                )
+            finally:
+                conn.close()
+
+        except Exception as e:
+            if isinstance(e, ToolException):
+                raise e
+            raise ToolException(
+                message=f"保存焊接方案失败: {str(e)}",
+                content="保存焊接方案时发生未知错误",
+                code=ToolErrorCode.UNKNOWN,
+                details=f"异常类型: {type(e).__name__}, 详细信息: {str(e)}",
+                input_args=SaveWeldingPlanInputModel(plan_name=plan_name).model_dump(),
+                tool_name="save_welding_plan",
+                retryable=False,
+            )
+
+    return [
+        set_welding_sort_plan,
+        show_current_welding_obj,
+        next_welding_obj,
+        prev_welding_obj,
+        set_welding_params,
+        save_welding_plan,  # 添加到返回列表中
+    ]
