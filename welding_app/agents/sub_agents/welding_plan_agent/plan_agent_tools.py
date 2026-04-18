@@ -145,9 +145,8 @@ def _build_solder_joints_map(scenario_model: WeldingScenarioModel) -> tuple[dict
 def _fetch_scenario_from_db(scenario_id: str) -> str:
     """从数据库获取场景JSON数据"""
     connect = sqlite3.connect(
-        Path(__file__).parent.parent.parent.parent.parent
-        / "welding_app"
-        / "data"
+        Path(__file__).parent.parent.parent.parent
+        / "databases"
         / "welding_scenarios.db"
     )
     try:
@@ -593,6 +592,12 @@ def design_welding_plan_toolkit():
         args_schema=SaveWeldingPlanInputModel,
         description=f"""# 保存焊接方案
 
+        保存当前设计的焊接方案到数据库。需要传入方案名称和对应的场景ID。
+
+        Args:
+            plan_name: 焊接方案的名称，要求简短易识别
+            scenario_id: 焊接方案对应的场景ID，必须与之前使用的场景ID保持一致
+
         Returns:
             SaveWeldingPlanOutputModel:
                 <json-schema>
@@ -602,7 +607,9 @@ def design_welding_plan_toolkit():
         Error: 不会发生报错
         """,
     )
-    def save_welding_plan(plan_name: str) -> SaveWeldingPlanOutputModel:
+    def save_welding_plan(
+        plan_name: str, scenario_id: str
+    ) -> SaveWeldingPlanOutputModel:
         """保存焊接方案"""
         # 检查是否有可保存的焊接方案
         if not _welding_plan.welding_plan:
@@ -611,7 +618,9 @@ def design_welding_plan_toolkit():
                 content="当前没有正在设计的焊接方案，请先设计焊接方案",
                 code=ToolErrorCode.RESOURCE_NOT_FOUND,
                 details="可能未调用 set_welding_sort_plan 或 generate_welding_plan",
-                input_args=SaveWeldingPlanInputModel(plan_name=plan_name).model_dump(),
+                input_args=SaveWeldingPlanInputModel(
+                    plan_name=plan_name, scenario_id=scenario_id
+                ).model_dump(),
                 tool_name="save_welding_plan",
                 retryable=False,
             )
@@ -623,7 +632,9 @@ def design_welding_plan_toolkit():
                 content="焊接方案缺少场景信息，无法保存",
                 code=ToolErrorCode.NVALID_INPUT,
                 details="焊接方案的 scenario 字段为空",
-                input_args=SaveWeldingPlanInputModel(plan_name=plan_name).model_dump(),
+                input_args=SaveWeldingPlanInputModel(
+                    plan_name=plan_name, scenario_id=scenario_id
+                ).model_dump(),
                 tool_name="save_welding_plan",
                 retryable=False,
             )
@@ -634,7 +645,9 @@ def design_welding_plan_toolkit():
                 content="焊接方案缺少顺序信息，无法保存",
                 code=ToolErrorCode.NVALID_INPUT,
                 details="焊接方案的 sequence 字段为空",
-                input_args=SaveWeldingPlanInputModel(plan_name=plan_name).model_dump(),
+                input_args=SaveWeldingPlanInputModel(
+                    plan_name=plan_name, scenario_id=scenario_id
+                ).model_dump(),
                 tool_name="save_welding_plan",
                 retryable=False,
             )
@@ -647,19 +660,9 @@ def design_welding_plan_toolkit():
             if not _welding_plan.welding_plan.plan_id:
                 _welding_plan.welding_plan.plan_id = uuid.uuid4().hex
 
-            # 获取场景ID - 从 welding_scenario 中获取（如果有）
-            # 注意：WeldingScenarioModel 本身没有 scenario_id 字段
+            # 使用传入的场景ID，而不是从焊点中提取
             # 场景ID是在调用 set_welding_sort_plan 时传入的 welding_scenario_id
-            scenario_id = ""
-            # 我们可以尝试从当前容器的 welding_scenario 属性中获取
-            if _welding_plan.welding_scenario:
-                # 尝试从场景的焊点或焊缝中提取ID
-                if _welding_plan.welding_scenario.solder_joints:
-                    # 使用第一个焊点的ID作为参考
-                    scenario_id = (
-                        _welding_plan.welding_scenario.solder_joints[0].position.id[:8]
-                        + "..."
-                    )
+            # 现在通过参数直接传入，确保一致性
 
             # 序列化数据
             full_data_json = _welding_plan.welding_plan.model_dump_json()
@@ -736,7 +739,7 @@ def design_welding_plan_toolkit():
                     code=ToolErrorCode.DB_WRITE_FAILED,
                     details=f"SQLite错误: {str(e)}",
                     input_args=SaveWeldingPlanInputModel(
-                        plan_name=plan_name
+                        plan_name=plan_name, scenario_id=scenario_id
                     ).model_dump(),
                     tool_name="save_welding_plan",
                     retryable=True,
@@ -752,7 +755,9 @@ def design_welding_plan_toolkit():
                 content="保存焊接方案时发生未知错误",
                 code=ToolErrorCode.UNKNOWN,
                 details=f"异常类型: {type(e).__name__}, 详细信息: {str(e)}",
-                input_args=SaveWeldingPlanInputModel(plan_name=plan_name).model_dump(),
+                input_args=SaveWeldingPlanInputModel(
+                    plan_name=plan_name, scenario_id=scenario_id
+                ).model_dump(),
                 tool_name="save_welding_plan",
                 retryable=False,
             )

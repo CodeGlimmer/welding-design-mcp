@@ -27,7 +27,7 @@ class GenerateWeldingPlanInputModel(BaseModel):
         connect = sqlite3.connect(
             Path(__file__).parent.parent.parent.parent.parent
             / "welding_app"
-            / "data"
+            / "databases"
             / "welding_scenarios.db"
         )
         try:
@@ -77,7 +77,7 @@ class GetWeldingScenarioInputModel(BaseModel):
         connect = sqlite3.connect(
             Path(__file__).parent.parent.parent.parent.parent
             / "welding_app"
-            / "data"
+            / "databases"
             / "welding_scenarios.db"
         )
         try:
@@ -118,7 +118,7 @@ class SetWeldingSortPlanInputModel(BaseModel):
         connect = sqlite3.connect(
             Path(__file__).parent.parent.parent.parent.parent
             / "welding_app"
-            / "data"
+            / "databases"
             / "welding_scenarios.db"
         )
         try:
@@ -180,6 +180,31 @@ class SaveWeldingPlanInputModel(BaseModel):
     """保存焊接方案"""
 
     plan_name: Annotated[str, Field(description="名称焊接方案的名称，要求简短易识别")]
+    scenario_id: Annotated[str, Field(description="焊接方案对应的场景ID")]
+
+    @field_validator("scenario_id")
+    @classmethod
+    def check_id_exists(cls, scenario_id: str):
+        """检查id是否存在"""
+        connect = sqlite3.connect(
+            Path(__file__).parent.parent.parent.parent.parent
+            / "welding_app"
+            / "databases"
+            / "welding_scenarios.db"
+        )
+        try:
+            with connect:
+                cursor = connect.cursor()
+                res = cursor.execute(
+                    "select data from welding_scenarios where id = ?",
+                    (scenario_id,),
+                )
+                res = res.fetchone()
+                if not res:
+                    raise ValueError("不存在符合该id的场景")
+        finally:
+            connect.close()
+        return scenario_id
 
 
 class SaveWeldingPlanOutputModel(BaseModel):
