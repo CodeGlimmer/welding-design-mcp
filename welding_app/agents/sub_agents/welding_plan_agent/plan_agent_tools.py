@@ -671,7 +671,7 @@ def design_welding_plan_toolkit():
 
             # 序列化工艺分配表 - 使用 model_dump_json 确保一致性
             process_assignments_list = [
-                assignment.model_dump()
+                assignment.model_dump(mode='json')
                 for assignment in _welding_plan.welding_plan.process_assignments
             ]
             process_assignments_json = json.dumps(process_assignments_list)
