@@ -15,14 +15,21 @@ _rag_database_path = (
     / "chroma_langchain_db"
 )
 
+_vector_store = None
+
 
 def _init_rag_database():
+    global _vector_store
+    if _vector_store is not None:  # 已初始化直接返回
+        return _vector_store
+
     embedding_model = OllamaEmbeddings(model="nomic-embed-text")
-    return Chroma(
+    _vector_store = Chroma(
         collection_name="example_collection",
         embedding_function=embedding_model,
         persist_directory=str(_rag_database_path),
     )
+    return _vector_store
 
 
 @tool(
@@ -41,7 +48,7 @@ def _init_rag_database():
 )
 def retriever(query: str, res_len: int):
     try:
-        vector_store = _init_rag_database()
+        _vector_store = _init_rag_database()
     except Exception as e:
         raise ToolException(
             message=str(e),
@@ -54,7 +61,7 @@ def retriever(query: str, res_len: int):
         )
 
     try:
-        results = vector_store.similarity_search(query, k=res_len)
+        results = _vector_store.similarity_search(query, k=res_len)
         return RetrieverOutput(results=[r.page_content for r in results])
     except Exception as e:
         raise ToolException(
@@ -66,3 +73,9 @@ def retriever(query: str, res_len: int):
             tool_name="retriever",
             retryable=False,
         )
+
+
+if __name__ == "__main__":
+    vector_store = _init_rag_database()
+    ans = vector_store.similarity_search("电流如何设置")
+    print(ans)

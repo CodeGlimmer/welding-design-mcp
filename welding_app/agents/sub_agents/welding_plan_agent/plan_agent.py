@@ -37,7 +37,7 @@ if __name__ == "__main__":
     from langchain.messages import HumanMessage
 
     mlflow.set_tracking_uri("http://127.0.0.1:5000")
-    mlflow.set_experiment("plan_agent v1")
+    mlflow.set_experiment("plan_agent v2")
     mlflow.autolog()
 
     agent = create_plan_agent()
