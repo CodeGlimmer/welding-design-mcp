@@ -243,7 +243,7 @@ def generate_welding_plan(scenario_id: str) -> WeldingSequenceSortModel:
             raise ToolException(
                 message=f"焊缝索引 {seam_idx} 缺少 ID",
                 content="焊缝缺少 ID 无法继续生成工艺规划",
-                code=ToolErrorCode.NVALID_INPUT,
+                code=ToolErrorCode.INVALID_INPUT,
                 details=None,
                 input_args=GenerateWeldingPlanInputModel(
                     scenario_id=scenario_id
@@ -329,7 +329,7 @@ def get_welding_scenario(scenario_id: str) -> WeldingScenarioModel:
         raise ToolException(
             message=str(e),
             content="场景在数据库中存储的schema不符合标准",
-            code=ToolErrorCode.NVALID_INPUT,
+            code=ToolErrorCode.INVALID_INPUT,
             details=None,
             input_args=GetWeldingScenarioInputModel(
                 scenario_id=scenario_id
@@ -630,7 +630,7 @@ def design_welding_plan_toolkit():
             raise ToolException(
                 message="焊接方案不完整，缺少场景信息",
                 content="焊接方案缺少场景信息，无法保存",
-                code=ToolErrorCode.NVALID_INPUT,
+                code=ToolErrorCode.INVALID_INPUT,
                 details="焊接方案的 scenario 字段为空",
                 input_args=SaveWeldingPlanInputModel(
                     plan_name=plan_name, scenario_id=scenario_id
@@ -643,7 +643,7 @@ def design_welding_plan_toolkit():
             raise ToolException(
                 message="焊接方案不完整，缺少顺序信息",
                 content="焊接方案缺少顺序信息，无法保存",
-                code=ToolErrorCode.NVALID_INPUT,
+                code=ToolErrorCode.INVALID_INPUT,
                 details="焊接方案的 sequence 字段为空",
                 input_args=SaveWeldingPlanInputModel(
                     plan_name=plan_name, scenario_id=scenario_id

@@ -20,3 +20,6 @@ exp.db
 
 # 测试脚本
 scripts/
+
+# 秘钥文件
+.secrets

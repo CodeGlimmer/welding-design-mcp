@@ -20,7 +20,7 @@ class ToolErrorCode(Enum):
     DB_WRITE_FAILED = "数据库写入失败"
 
     # 输入/参数相关
-    NVALID_INPUT = "输入格式错误"
+    INVALID_INPUT = "输入格式错误"
     MISSING_REQUIRED_FIELD = "缺少必需字段"
     INVALID_FIELD_VALUE = "字段值无效"
     VALIDATION_FAILED = "数据校验失败"

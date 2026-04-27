@@ -1,8 +1,11 @@
+import os
 from pathlib import Path
 
+from chromadb.api.shared_system_client import SharedSystemClient
+from chromadb.config import Settings
 from langchain.tools import tool
 from langchain_chroma import Chroma
-from langchain_ollama import OllamaEmbeddings
+from langchain_openai import OpenAIEmbeddings
 
 from welding_app.error.error_message import ToolErrorCode, ToolException
 
@@ -23,11 +26,24 @@ def _init_rag_database():
     if _vector_store is not None:  # 已初始化直接返回
         return _vector_store
 
-    embedding_model = OllamaEmbeddings(model="nomic-embed-text")
+    # 清除 ChromaDB 单例缓存，避免 agent 多线程调用时 KeyError
+    SharedSystemClient.clear_system_cache()
+
+    embedding_model = OpenAIEmbeddings(
+        model="BAAI/bge-m3",
+        base_url="https://api.siliconflow.cn/v1",
+        api_key=os.getenv("SILICONFLOW_API_KEY"),  # type: ignore
+        check_embedding_ctx_length=False,
+        chunk_size=64,
+    )
     _vector_store = Chroma(
         collection_name="example_collection",
         embedding_function=embedding_model,
         persist_directory=str(_rag_database_path),
+        client_settings=Settings(
+            chroma_api_impl="chromadb.api.segment.SegmentAPI",
+            anonymized_telemetry=False,
+        ),
     )
     return _vector_store
 
