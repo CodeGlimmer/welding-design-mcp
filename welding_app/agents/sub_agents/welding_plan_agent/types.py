@@ -211,3 +211,16 @@ class SaveWeldingPlanOutputModel(BaseModel):
     """保存焊接方案的输出"""
 
     plan_id: Annotated[str, Field(description="保存成功后返回的焊接方案id")]
+
+
+class WeldingPlanResult(BaseModel):
+    """run_welding_plan_design 的返回值，包含焊接方案设计的最终结果"""
+
+    plan_id: Annotated[
+        str,
+        Field(description="保存到数据库后获得的焊接方案唯一标识"),
+    ]
+    report: Annotated[
+        str,
+        Field(description="完整的设计报告，包含焊接顺序规划、工艺参数设计、参数选择依据等内容"),
+    ]
