@@ -3,9 +3,13 @@ from pathlib import Path
 
 from langchain.tools import tool
 from langchain_core.messages import HumanMessage
+from langgraph.errors import GraphRecursionError
 
 from .scenario_operations import get_latest_parsed_scenario
-from .sub_agents.welding_plan_agent.plan_agent import run_welding_plan_design
+from .sub_agents.welding_plan_agent.plan_agent import (
+    WeldingPlanStructuredOutputError,
+    run_welding_plan_design,
+)
 from .sub_agents.welding_scenario_parsing_agent.parsing_agent import (
     create_parsing_agent,
 )
@@ -168,12 +172,35 @@ def execute_welding_task(
             solution_id=None,
         )
 
-    design_result = run_welding_plan_design(
-        scenario_id=parsed_scenario_id,
-        content=content,
-        requirements=requirements,
-        additional_info=addtional_info,
-    )
+    try:
+        design_result = run_welding_plan_design(
+            scenario_id=parsed_scenario_id,
+            content=content,
+            requirements=requirements,
+            additional_info=addtional_info,
+        )
+    except GraphRecursionError:
+        return TaskExcutionResult(
+            error=True,
+            state=TaskState.DESIGN,
+            error_reason=(
+                "焊接方案规划 Agent 超过最大推理步数，可能在知识查询或工具调用中未能收敛。"
+                "请减少需求复杂度，或检查方案规划提示词和工具终止条件。"
+            ),
+            reply=None,
+            solution_id=None,
+        )
+    except WeldingPlanStructuredOutputError as e:
+        return TaskExcutionResult(
+            error=True,
+            state=TaskState.DESIGN,
+            error_reason=str(e),
+            reply=(
+                "这是方案设计子 Agent 的内部结构化输出失败，不是用户缺少场景信息或焊接需求。"
+                "请开发者检查 plan agent 的 response_format、最终输出指令和模型工具调用结果。"
+            ),
+            solution_id=None,
+        )
 
     if not design_result.plan_id:
         return TaskExcutionResult(

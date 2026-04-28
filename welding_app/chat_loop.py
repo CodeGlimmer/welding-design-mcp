@@ -1,11 +1,11 @@
-# import mlflow
+import mlflow
 from langchain_core.messages import HumanMessage
 
 from welding_app.agents.main_agent import create_main_agent
 
-# mlflow.set_tracking_uri("http://127.0.0.1:5000")
-# mlflow.set_experiment("version 0")
-# mlflow.autolog()
+mlflow.set_tracking_uri("http://127.0.0.1:5000")
+mlflow.set_experiment("version 1")
+mlflow.autolog()
 
 
 def main():

@@ -19,6 +19,10 @@ from .prompt import system_prompt, todo_list_prompt
 from .types import WeldingPlanResult
 
 
+class WeldingPlanStructuredOutputError(RuntimeError):
+    """方案 Agent 未返回 WeldingPlanResult 结构化结果。"""
+
+
 def create_plan_agent(response_format: type | ToolStrategy | None = None):
 
     model = ChatDeepSeek(model="deepseek-chat", temperature=0.1, top_p=0.2)
@@ -96,13 +100,22 @@ def run_welding_plan_design(
 ---
 请按照你的工作流程完成焊接方案的设计。"""
 
-    agent = create_plan_agent(response_format=WeldingPlanResult)
+    agent = create_plan_agent(response_format=ToolStrategy(WeldingPlanResult))
     result = agent.invoke(
         {"messages": [HumanMessage(content=task_prompt)]},
-        {"configurable": {"thread_id": str(uuid.uuid4())}},
+        {
+            "configurable": {"thread_id": str(uuid.uuid4())},
+            "recursion_limit": 100,
+        },
     )
 
-    return result["structured_response"]
+    structured_response = result.get("structured_response")
+    if structured_response is None:
+        raise WeldingPlanStructuredOutputError(
+            f"方案 Agent 未返回 structured_response。result keys: {', '.join(result.keys())}"
+        )
+
+    return structured_response
 
 
 if __name__ == "__main__":

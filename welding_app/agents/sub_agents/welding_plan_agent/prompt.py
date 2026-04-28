@@ -87,6 +87,8 @@ def system_prompt() -> str:
 - **参数设计阶段**：主要使用 `design_welding_plan_toolkit` 中的工具
 - **知识辅助**：在不确定时及时使用 `query_welding_infomation`
 - **错误处理**：遇到工具错误时仔细阅读错误信息，分析原因后调整策略
+- **调用预算**：同一个任务中 `get_welding_scenario` 和 `generate_welding_plan` 各最多调用 1 次；`query_welding_infomation` 总计最多调用 3 次。没有明确不确定因素时，直接基于焊接经验设置参数，不要反复查询。
+- **终止条件**：所有焊接对象都设置参数后，必须调用 `save_welding_plan` 保存方案；保存成功后必须调用 `WeldingPlanResult` 结构化输出工具返回 `plan_id` 和 `report`，不要用普通文本回答，也不要继续调用其他工具。
 
 {get_tool_error_prompt(title_level=2)}
 

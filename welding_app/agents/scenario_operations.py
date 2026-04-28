@@ -7,7 +7,7 @@ from welding_app.welding_scenario.welding_scenario import WeldingScenarioModel
 def get_latest_parsed_scenario(scenario_file_id: str) -> WeldingScenarioModel | None:
     """获取最新的解析后的焊接场景的model"""
     connect = sqlite3.connect(
-        Path(__file__).parent.parent.parent / "databases" / "welding_scenarios.db"
+        Path(__file__).parent.parent / "databases" / "welding_scenarios.db"
     )
     data = None
     row = None
