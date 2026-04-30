@@ -15,9 +15,6 @@ from .plan_agent_tools import (
     get_welding_scenario,
     query_welding_infomation,
 )
-from .plan_agent_tools import (
-    generate_welding_plan as generate_welding_plan_tool,
-)
 from .prompt import system_prompt, todo_list_prompt
 from .types import WeldingPlanResult
 
@@ -34,7 +31,6 @@ def create_plan_agent(response_format: type | ToolStrategy | None = None):
         model=model,
         system_prompt=system_prompt(),
         tools=[
-            generate_welding_plan_tool,
             query_welding_infomation,
             get_welding_scenario,
         ]

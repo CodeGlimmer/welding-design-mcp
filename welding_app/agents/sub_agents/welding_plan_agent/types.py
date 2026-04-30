@@ -1,13 +1,12 @@
 import sqlite3
 from enum import Enum
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
 from welding_app.welding_scenario.process_parameters import ProcessParamsUnion
 from welding_app.welding_scenario.solder_joint import SolderJointModel
-from welding_app.welding_scenario.weld_sequence_plan import WeldingSequenceSortModel
 
 
 class GenerateWeldingPlanInputModel(BaseModel):
@@ -95,19 +94,81 @@ class GetWeldingScenarioInputModel(BaseModel):
         return scenario_id
 
 
-class SetWeldingSortPlanInputModel(BaseModel):
-    """tool set_welding_sort_plan input schema"""
+class WeldingSortTaskSummaryModel(BaseModel):
+    """用于给 agent 做排序决策的轻量焊接任务摘要。"""
 
-    sort_plan: Annotated[
-        WeldingSequenceSortModel,
-        Field(description="传入完成排序的焊接方案"),
+    task_id: Annotated[
+        str,
+        Field(
+            description=(
+                "线性焊接任务ID。agent 调整焊接顺序时只需要返回这些 task_id，"
+                "不要返回完整焊接对象。"
+            )
+        ),
+    ]
+    task_type: Annotated[
+        Literal["solder_joint", "sub_seam"],
+        Field(description="任务类型：焊点或子焊缝段"),
+    ]
+    name: Annotated[str | None, Field(description="焊点名称或子焊缝任务名称")] = None
+    parent_seam_id: Annotated[
+        str | None, Field(description="子焊缝所属焊缝ID；焊点任务为空")
+    ] = None
+    position: Annotated[
+        list[float] | None, Field(description="焊点坐标；子焊缝任务为空")
+    ] = None
+    start_position: Annotated[
+        list[float] | None, Field(description="子焊缝起点坐标；焊点任务为空")
+    ] = None
+    end_position: Annotated[
+        list[float] | None, Field(description="子焊缝终点坐标；焊点任务为空")
+    ] = None
+    base_material: Annotated[
+        list[str] | None, Field(description="焊点或子焊缝起点材料信息")
+    ] = None
+    connected_parts: Annotated[
+        list[str] | None, Field(description="焊点或子焊缝起点连接部件")
+    ] = None
+
+
+class WeldingSortPlanSummaryModel(BaseModel):
+    """generate_welding_plan 返回给 agent 的轻量排序摘要。"""
+
+    scenario_id: Annotated[str, Field(description="焊接场景ID")]
+    initial_order_task_ids: Annotated[
+        list[str], Field(description="算法生成的初始线性焊接任务顺序")
+    ]
+    tasks: Annotated[
+        list[WeldingSortTaskSummaryModel],
+        Field(description="用于排序决策的轻量任务清单"),
+    ]
+    instruction: Annotated[
+        str,
+        Field(
+            description=(
+                "下一步操作提示：agent 应将最终顺序的 task_id 列表传给 "
+                "set_welding_task_order，而不是传完整排序模型。"
+            )
+        ),
+    ]
+
+
+class SetWeldingTaskOrderInputModel(BaseModel):
+    """tool set_welding_task_order input schema"""
+
+    ordered_task_ids: Annotated[
+        list[str],
+        Field(
+            description=(
+                "最终焊接任务顺序。必须只包含 generate_welding_plan 返回的 task_id，"
+                "且不能重复、不能遗漏。"
+            )
+        ),
     ]
     welding_scenario_id: Annotated[
         str,
         Field(
-            description="""传入场景id
-            本工具会将当前被设计的焊接方案指向已经完成排序的焊接方案，
-            同时在展示当前焊接对象时提供更丰富的信息"""
+            description="焊接方案对应的场景ID，必须与 generate_welding_plan 使用的场景一致"
         ),
     ]
 

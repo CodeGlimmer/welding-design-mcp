@@ -22,6 +22,7 @@ from welding_app.welding_scenario.process_parameters import (
 )
 from welding_app.welding_scenario.weld_seam import WeldSeamModel
 from welding_app.welding_scenario.weld_sequence_plan import (
+    LinearWeldingTask,
     SolderJointMixedWeldSeamSortModel,
     SolderJointsSortModel,
     WeldingSequenceNavigator,
@@ -43,8 +44,10 @@ from .types import (
     SaveWeldingPlanInputModel,
     SaveWeldingPlanOutputModel,
     SetWeldingParamsInputModel,
-    SetWeldingSortPlanInputModel,
+    SetWeldingTaskOrderInputModel,
     ShowCurrentWeldingObjectOutputModel,
+    WeldingSortPlanSummaryModel,
+    WeldingSortTaskSummaryModel,
 )
 
 
@@ -212,19 +215,7 @@ def _fetch_scenario_from_db(scenario_id: str) -> str:
         connect.close()
 
 
-@tool(
-    args_schema=GenerateWeldingPlanInputModel,
-    description=f"""根据场景id获取场景对象，从而对场景中的焊点，焊缝的焊接顺序作出规划
-
-        Returns:
-            WeldingSequenceSortModel:
-                <json-schema>
-                    {WeldingSequenceSortModel.model_json_schema()}
-                <json-schema>
-
-        Error: 可能抛出异常""",
-)
-def generate_welding_plan(scenario_id: str) -> WeldingSequenceSortModel:
+def _generate_welding_plan_model(scenario_id: str) -> WeldingSequenceSortModel:
     """根据场景id获取场景对象，从而对场景中的焊点，焊缝的焊接顺序作出规划"""
 
     # 从数据库获取场景
@@ -321,6 +312,23 @@ def generate_welding_plan(scenario_id: str) -> WeldingSequenceSortModel:
 
 
 @tool(
+    args_schema=GenerateWeldingPlanInputModel,
+    description=f"""根据场景id获取场景对象，从而对场景中的焊点，焊缝的焊接顺序作出规划
+
+        Returns:
+            WeldingSequenceSortModel:
+                <json-schema>
+                    {WeldingSequenceSortModel.model_json_schema()}
+                <json-schema>
+
+        Error: 可能抛出异常""",
+)
+def generate_welding_plan(scenario_id: str) -> WeldingSequenceSortModel:
+    """根据场景id获取场景对象，从而对场景中的焊点，焊缝的焊接顺序作出规划"""
+    return _generate_welding_plan_model(scenario_id)
+
+
+@tool(
     args_schema=QueryWeldingInformationInputModel,
     description="""从知识库检索焊接基础知识
 
@@ -393,6 +401,166 @@ def get_welding_scenario(scenario_id: str) -> WeldingScenarioModel:
         )
 
 
+def _task_id(task: LinearWeldingTask) -> str:
+    return f"{task.task_type}:{task.index}:{task.param_entity_id}"
+
+
+def _point_to_list(point) -> list[float]:
+    return [point.x, point.y, point.z]
+
+
+def _material_values(materials) -> list[str] | None:
+    if not materials:
+        return None
+    return [
+        material.value if hasattr(material, "value") else str(material)
+        for material in materials
+    ]
+
+
+def _task_summary(task: LinearWeldingTask) -> WeldingSortTaskSummaryModel:
+    task_id = _task_id(task)
+    if task.task_type == "solder_joint":
+        solder_joint = task.solder_joint
+        if not solder_joint:
+            raise ValueError(f"焊点任务 {task_id} 缺少焊点对象")
+        return WeldingSortTaskSummaryModel(
+            task_id=task_id,
+            task_type=task.task_type,
+            name=solder_joint.name,
+            position=_point_to_list(solder_joint.position),
+            base_material=_material_values(solder_joint.base_material),
+            connected_parts=solder_joint.connected_parts,
+        )
+
+    if not task.sub_seam:
+        raise ValueError(f"子焊缝任务 {task_id} 缺少子焊缝对象")
+    start_joint, end_joint = task.sub_seam
+    start_name = start_joint.name or start_joint.position.id or "?"
+    end_name = end_joint.name or end_joint.position.id or "?"
+    return WeldingSortTaskSummaryModel(
+        task_id=task_id,
+        task_type=task.task_type,
+        name=f"{start_name}->{end_name}",
+        parent_seam_id=task.seam_id,
+        start_position=_point_to_list(start_joint.position),
+        end_position=_point_to_list(end_joint.position),
+        base_material=_material_values(start_joint.base_material),
+        connected_parts=start_joint.connected_parts,
+    )
+
+
+def _linear_tasks(sort_plan: WeldingSequenceSortModel) -> list[LinearWeldingTask]:
+    return WeldingSequenceNavigator(sort_plan).all_tasks
+
+
+def _summarize_sort_plan(
+    scenario_id: str, sort_plan: WeldingSequenceSortModel
+) -> WeldingSortPlanSummaryModel:
+    task_summaries = [_task_summary(task) for task in _linear_tasks(sort_plan)]
+    task_ids = [task.task_id for task in task_summaries]
+    return WeldingSortPlanSummaryModel(
+        scenario_id=scenario_id,
+        initial_order_task_ids=task_ids,
+        tasks=task_summaries,
+        instruction=(
+            "请审查 initial_order_task_ids。若需要调整顺序，只调整 task_id 的排列，"
+            "然后调用 set_welding_task_order。不要传完整 sort_plan、焊点对象、坐标对象或 "
+            "best_fitness_history。"
+        ),
+    )
+
+
+def _ordered_tasks_from_ids(
+    sort_plan: WeldingSequenceSortModel,
+    ordered_task_ids: list[str],
+    welding_scenario_id: str,
+) -> list[LinearWeldingTask]:
+    task_map = {_task_id(task): task for task in _linear_tasks(sort_plan)}
+    expected_ids = set(task_map)
+    actual_ids = set(ordered_task_ids)
+    duplicate_ids = sorted(
+        task_id for task_id in actual_ids if ordered_task_ids.count(task_id) > 1
+    )
+    unknown_ids = sorted(actual_ids - expected_ids)
+    missing_ids = sorted(expected_ids - actual_ids)
+
+    if duplicate_ids or unknown_ids or missing_ids:
+        details = {
+            "duplicate_ids": duplicate_ids,
+            "unknown_ids": unknown_ids,
+            "missing_ids": missing_ids,
+        }
+        raise ToolException(
+            message="焊接任务排序ID不完整或不合法",
+            content=(
+                "ordered_task_ids 必须完整包含 generate_welding_plan 返回的所有 task_id，"
+                "且不能重复、不能新增。"
+            ),
+            code=ToolErrorCode.INVALID_INPUT,
+            details=json.dumps(details, ensure_ascii=False),
+            input_args=SetWeldingTaskOrderInputModel(
+                ordered_task_ids=ordered_task_ids,
+                welding_scenario_id=welding_scenario_id,
+            ).model_dump(),
+            tool_name="set_welding_task_order",
+            retryable=True,
+        )
+
+    return [task_map[task_id] for task_id in ordered_task_ids]
+
+
+def _rebuild_sort_plan_from_tasks(
+    base_sort_plan: WeldingSequenceSortModel, ordered_tasks: list[LinearWeldingTask]
+) -> WeldingSequenceSortModel:
+    base_plan = base_sort_plan.sequence_plan
+    if isinstance(base_plan, SolderJointsSortModel):
+        return WeldingSequenceSortModel(
+            sequence_plan=SolderJointsSortModel(
+                solder_joint_sort=[
+                    task.solder_joint
+                    for task in ordered_tasks
+                    if task.task_type == "solder_joint" and task.solder_joint
+                ],
+                best_fitness=base_plan.best_fitness,
+                best_fitness_history=base_plan.best_fitness_history,
+            )
+        )
+
+    solder_joint_tasks = [
+        task.solder_joint
+        for task in ordered_tasks
+        if task.task_type == "solder_joint" and task.solder_joint
+    ]
+    seam_order: list[str] = []
+    seam_segments: dict[str, list[tuple]] = {}
+    for task in ordered_tasks:
+        if task.task_type != "sub_seam" or not task.seam_id or not task.sub_seam:
+            continue
+        if task.seam_id not in seam_segments:
+            seam_order.append(task.seam_id)
+            seam_segments[task.seam_id] = []
+        seam_segments[task.seam_id].append(task.sub_seam)
+
+    return WeldingSequenceSortModel(
+        sequence_plan=SolderJointMixedWeldSeamSortModel(
+            solder_joints_sort=SolderJointsSortModel(
+                solder_joint_sort=solder_joint_tasks,
+                best_fitness=base_plan.solder_joints_sort.best_fitness,
+                best_fitness_history=base_plan.solder_joints_sort.best_fitness_history,
+            ),
+            weld_seam_sort=WeldSeamsSortModel(
+                welding_seam_sort=[
+                    WeldSeamSortModel(
+                        seam_id=seam_id, sub_seam_sort=seam_segments[seam_id]
+                    )
+                    for seam_id in seam_order
+                ]
+            ),
+        )
+    )
+
+
 class ScenarioType(Enum):
     SolderJoints = 0
     SolderJointMixedWeldSeam = 1
@@ -400,6 +568,8 @@ class ScenarioType(Enum):
 
 @dataclass
 class CurrentWeldingPlanContainer:
+    generated_sort_plan: WeldingSequenceSortModel | None = None
+    generated_scenario_id: str | None = None
     welding_scenario: WeldingScenarioModel | None = None  # 当前焊接场景
     welding_sort_plan: WeldingSequenceSortModel | None = None  # 当前焊接方案顺序
     scenario_type: ScenarioType = ScenarioType.SolderJoints  # 场景类型
@@ -412,7 +582,8 @@ def design_welding_plan_toolkit():
 
     Tools:
         导航工具
-        set_welding_sort_plan: 设计焊接方案的顺序, 初始化参数设计
+        generate_welding_plan: 生成焊接顺序初稿，返回轻量 task_id 清单
+        set_welding_task_order: 根据 task_id 顺序初始化参数设计
         next_welding_obj: 获取下一个焊接对象
         previous_welding_obj: 获取上一个焊接对象
         show_current_welding_obj: 显示当前焊接对象
@@ -431,36 +602,93 @@ def design_welding_plan_toolkit():
     _welding_plan = CurrentWeldingPlanContainer()
 
     @tool(
-        args_schema=SetWeldingSortPlanInputModel,
-        description="""传入完成排序的焊接方案
-        系统会将当前被设计的焊接方案指向已经完成排序的焊接方案
+        args_schema=GenerateWeldingPlanInputModel,
+        description=f"""根据场景id生成焊接顺序初稿，并返回轻量任务清单。
+
+        本工具会在内部保存完整的 WeldingSequenceSortModel。返回给 agent 的是
+        task_id、任务类型、坐标和材料等轻量摘要。agent 如果要调整顺序，只需要把
+        task_id 重新排序后传给 set_welding_task_order。
 
         Returns:
-            str: 返回“焊接工艺顺序已经设定，可以开始设计工艺参数”的提示
+            WeldingSortPlanSummaryModel:
+                <json-schema>
+                    {WeldingSortPlanSummaryModel.model_json_schema()}
+                </json-schema>
         """,
     )
-    def set_welding_sort_plan(
-        sort_plan: WeldingSequenceSortModel, welding_scenario_id: str
+    def generate_welding_plan(scenario_id: str) -> WeldingSortPlanSummaryModel:
+        """生成焊接顺序初稿，并缓存完整排序模型。"""
+        sort_plan = _generate_welding_plan_model(scenario_id)
+        _welding_plan.generated_sort_plan = sort_plan
+        _welding_plan.generated_scenario_id = scenario_id
+        summary = _summarize_sort_plan(scenario_id, sort_plan)
+        return summary
+
+    @tool(
+        args_schema=SetWeldingTaskOrderInputModel,
+        description="""设置最终焊接任务顺序，初始化参数设计环境。
+
+        ordered_task_ids 必须是 generate_welding_plan 返回的 task_id 列表。
+        允许 agent 调整顺序，但禁止传完整 sort_plan、焊点对象、焊缝对象或坐标对象。
+
+        Returns:
+            str: 返回“焊接任务顺序已经设定，可以开始设计工艺参数”的提示
+        """,
+    )
+    def set_welding_task_order(
+        ordered_task_ids: list[str], welding_scenario_id: str
     ) -> str:
-        """传入焊接工艺方案的顺序，即generate_welding_plan与agent审核后的结果"""
+        """根据轻量 task_id 顺序重建焊接顺序方案。"""
+        if not _welding_plan.generated_sort_plan:
+            raise ToolException(
+                message="尚未生成焊接顺序初稿",
+                content="请先调用 generate_welding_plan，再调用 set_welding_task_order",
+                code=ToolErrorCode.RESOURCE_NOT_FOUND,
+                details=None,
+                input_args=SetWeldingTaskOrderInputModel(
+                    ordered_task_ids=ordered_task_ids,
+                    welding_scenario_id=welding_scenario_id,
+                ).model_dump(),
+                tool_name="set_welding_task_order",
+                retryable=True,
+            )
+        if _welding_plan.generated_scenario_id != welding_scenario_id:
+            raise ToolException(
+                message="焊接场景ID与已生成排序方案不一致",
+                content="set_welding_task_order 必须使用 generate_welding_plan 的同一个场景ID",
+                code=ToolErrorCode.INVALID_INPUT,
+                details=(
+                    f"generated_scenario_id={_welding_plan.generated_scenario_id}, "
+                    f"welding_scenario_id={welding_scenario_id}"
+                ),
+                input_args=SetWeldingTaskOrderInputModel(
+                    ordered_task_ids=ordered_task_ids,
+                    welding_scenario_id=welding_scenario_id,
+                ).model_dump(),
+                tool_name="set_welding_task_order",
+                retryable=True,
+            )
+
+        ordered_tasks = _ordered_tasks_from_ids(
+            _welding_plan.generated_sort_plan, ordered_task_ids, welding_scenario_id
+        )
+        sort_plan = _rebuild_sort_plan_from_tasks(
+            _welding_plan.generated_sort_plan, ordered_tasks
+        )
         _ensure_sort_plan_ids(sort_plan)
         _welding_plan.welding_sort_plan = sort_plan
-        _welding_plan.nav = WeldingSequenceNavigator(sort_plan)
+        _welding_plan.nav = WeldingSequenceNavigator.from_tasks(ordered_tasks)
 
-        # 设置焊接类型
         if sort_plan.sequence_plan.type_flag == "SolderJointsSortModel":
             _welding_plan.scenario_type = ScenarioType.SolderJoints
         else:
             _welding_plan.scenario_type = ScenarioType.SolderJointMixedWeldSeam
 
-        # 绑定具体的焊接场景
         _welding_plan.welding_scenario = _ensure_scenario_ids(
             WeldingScenarioModel.model_validate_json(
                 _fetch_scenario_from_db(welding_scenario_id)
             )
         )
-
-        # 初始化焊接工艺方案
         _welding_plan.welding_plan = WeldingPlanModel(
             plan_id=uuid.uuid4().hex,
             name=None,
@@ -468,7 +696,7 @@ def design_welding_plan_toolkit():
             sequence=_welding_plan.welding_sort_plan,
         )
 
-        return "焊接工艺顺序已经设定，可以开始设计工艺参数"
+        return f"焊接任务顺序已经设定，共 {len(ordered_tasks)} 个任务，可以开始设计工艺参数"
 
     @tool(
         description=f"""显示当前正在设计的焊接对象
@@ -485,7 +713,7 @@ def design_welding_plan_toolkit():
             raise ToolException(
                 message="当前没有正在设计的焊接对象",
                 code=ToolErrorCode.RESOURCE_NOT_FOUND,
-                details="可能为正确调用set_welding_sort_plan",
+                details="可能未正确调用 set_welding_task_order",
                 input_args=None,
                 content="当前没有正在设计的对象",
                 tool_name="show_current_welding_obj",
@@ -677,7 +905,7 @@ def design_welding_plan_toolkit():
                 message="没有可保存的焊接方案",
                 content="当前没有正在设计的焊接方案，请先设计焊接方案",
                 code=ToolErrorCode.RESOURCE_NOT_FOUND,
-                details="可能未调用 set_welding_sort_plan 或 generate_welding_plan",
+                details="可能未调用 set_welding_task_order 或 generate_welding_plan",
                 input_args=SaveWeldingPlanInputModel(
                     plan_name=plan_name, scenario_id=scenario_id
                 ).model_dump(),
@@ -721,7 +949,7 @@ def design_welding_plan_toolkit():
                 _welding_plan.welding_plan.plan_id = uuid.uuid4().hex
 
             # 使用传入的场景ID，而不是从焊点中提取
-            # 场景ID是在调用 set_welding_sort_plan 时传入的 welding_scenario_id
+            # 场景ID是在调用 set_welding_task_order 时传入的 welding_scenario_id
             # 现在通过参数直接传入，确保一致性
 
             # 序列化数据
@@ -823,7 +1051,8 @@ def design_welding_plan_toolkit():
             )
 
     return [
-        set_welding_sort_plan,
+        generate_welding_plan,
+        set_welding_task_order,
         show_current_welding_obj,
         next_welding_obj,
         prev_welding_obj,

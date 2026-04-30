@@ -37,7 +37,10 @@ class LinearWeldingTask(BaseModel):
             start_id = self.sub_seam[0].position.id if self.sub_seam else None
             if not start_id:
                 raise ValueError("子焊缝段的起点缺少 position.id")
-            return f"{self.seam_id}-{start_id}"
+            end_id = self.sub_seam[1].position.id if self.sub_seam else None
+            if not end_id:
+                raise ValueError("子焊缝段的终点缺少 position.id")
+            return f"{self.seam_id}-{start_id}-{end_id}"
 
     def __str__(self) -> str:
         if self.task_type == "solder_joint":
@@ -63,6 +66,14 @@ class WeldingSequenceNavigator:
     def __init__(self, model: "WeldingSequenceSortModel"):
         self._tasks: List[LinearWeldingTask] = self._linearize(model)
         self._current_index: int = 0
+
+    @classmethod
+    def from_tasks(cls, tasks: List[LinearWeldingTask]) -> "WeldingSequenceNavigator":
+        """从已排序的线性任务列表创建导航器。"""
+        nav = cls.__new__(cls)
+        nav._tasks = [task.model_copy() for task in tasks]
+        nav._current_index = 0
+        return nav
 
     def _linearize(self, model: "WeldingSequenceSortModel") -> List[LinearWeldingTask]:
         plan = model.sequence_plan

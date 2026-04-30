@@ -19,7 +19,7 @@ def system_prompt() -> str:
 
 ### 第一阶段：顺序规划
 1. **获取焊接场景**：使用场景ID获取焊接场景对象
-2. **生成初始方案**：使用 `generate_welding_plan` 工具生成初始焊接顺序方案
+2. **生成初始方案**：使用 `generate_welding_plan` 工具生成初始焊接顺序方案。该工具会返回轻量任务清单和 `initial_order_task_ids`，不会要求你搬运完整排序模型。
 3. **方案审查调整**：审查工具生成的方案，基于以下原则进行调整：
    - 热变形控制：避免连续焊接导致的热积累和变形
    - 可达性：确保焊接顺序符合实际焊接操作的可达性
@@ -28,7 +28,7 @@ def system_prompt() -> str:
    - 应力分布：合理安排焊接顺序以减少残余应力
 
 ### 第二阶段：参数设计
-4. **初始化设计环境**：使用 `design_welding_plan_toolkit` 工具集，通过 `set_welding_sort_plan` 设置已确定的焊接顺序
+4. **初始化设计环境**：审查 `initial_order_task_ids` 后，通过 `set_welding_task_order` 传入最终 `ordered_task_ids` 设置已确定的焊接顺序。你只允许传 task_id 列表，不要传完整 `sort_plan`、焊点对象或坐标对象。
 5. **遍历焊接对象**：
    - 使用 `show_current_welding_obj` 查看当前焊接对象的详细信息
    - 使用 `next_welding_obj` 和 `prev_welding_obj` 在焊接对象间导航
@@ -47,8 +47,8 @@ def system_prompt() -> str:
 ## 必须完成的工具调用链
 一次完整任务至少应包含以下闭环：
 
-1. 调用 `generate_welding_plan` 获取初始排序。
-2. 调用 `set_welding_sort_plan` 初始化参数设计环境。
+1. 调用 `generate_welding_plan` 获取初始排序和轻量任务清单。
+2. 调用 `set_welding_task_order`，将最终顺序作为 `ordered_task_ids` 传入，初始化参数设计环境。禁止传完整 `sort_plan`。
 3. 从第一个焊接对象开始，重复执行 `show_current_welding_obj`、`set_welding_params`、`next_welding_obj`，直到最后一个对象也完成参数设置。
 4. 最后一个对象设置参数成功后，不要再调用 `next_welding_obj` 试探边界，直接调用 `save_welding_plan`。
 5. `save_welding_plan` 成功后，立即返回 `WeldingPlanResult`。此后禁止继续调用任何工具。
@@ -97,11 +97,12 @@ def system_prompt() -> str:
 - 如约束确实无法同时满足，不要中途停下请求用户指导；你必须在当前任务内做出最合理的工程取舍，完成方案保存，并在最终报告中说明冲突、取舍依据和剩余风险
 
 ## 工具使用策略
-- **顺序规划阶段**：主要使用 `generate_welding_plan` 和知识查询
+- **顺序规划阶段**：主要使用 `generate_welding_plan` 和知识查询。`generate_welding_plan` 返回的完整决策入口是 task_id 顺序，不是完整模型。
 - **参数设计阶段**：主要使用 `design_welding_plan_toolkit` 中的工具
 - **知识辅助**：在不确定时及时使用 `query_welding_infomation`
 - **错误处理**：遇到工具错误时仔细阅读错误信息，分析原因后调整策略
 - **调用预算**：同一个任务中 `get_welding_scenario` 和 `generate_welding_plan` 各最多调用 1 次；`query_welding_infomation` 总计最多调用 3 次。没有明确不确定因素时，直接基于焊接经验设置参数，不要反复查询。
+- **排序传参限制**：调整焊接顺序时，只重排 `generate_welding_plan` 返回的 task_id，并调用 `set_welding_task_order(ordered_task_ids=[...], welding_scenario_id=...)`。绝对不要把完整 `sort_plan`、焊点 JSON、焊缝 JSON、坐标 JSON 或 `best_fitness_history` 作为工具参数传回。
 - **阶段门禁**：生成焊接顺序后不得结束；初始化设计环境后不得结束；只要还有任何焊接对象未设置参数，不得结束；保存方案之前不得调用 `WeldingPlanResult`。
 - **终止条件**：所有焊接对象都设置参数后，必须调用 `save_welding_plan` 保存方案；保存成功后必须调用 `WeldingPlanResult` 结构化输出工具返回 `plan_id` 和 `report`，不要用普通文本回答，也不要继续调用其他工具。
 - **唯一合法最终响应**：最终响应必须是 `WeldingPlanResult`，且 `plan_id` 必须来自 `save_welding_plan` 的返回值。任何没有 `plan_id` 的总结、阶段性报告、问题说明都不是合法最终响应。
