@@ -5,6 +5,7 @@ from langchain.messages import HumanMessage
 from pydantic import Field
 
 from welding_app.agents.main_agent import create_main_agent
+from welding_app.agents.runtime_config import agent_config
 from welding_app.server_types.main_agent_responce import MainAgentResponse
 
 
@@ -37,7 +38,7 @@ def register_main_agent_tools(mcp: FastMCP):
         """设计与主agent对话沟通的功能"""
         res = main_agent.invoke(
             input={"messages": [HumanMessage(content=message)]},
-            config={"configurable": {"thread_id": thread_id}},
+            config=agent_config(thread_id=thread_id),
         )
         return MainAgentResponse(
             message=res["messages"][-1].content, thread_id=thread_id

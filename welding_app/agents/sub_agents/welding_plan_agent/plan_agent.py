@@ -6,14 +6,17 @@ from langchain.agents.structured_output import ToolStrategy
 from langchain.messages import HumanMessage
 from langchain_deepseek import ChatDeepSeek
 
+from welding_app.agents.runtime_config import agent_config
 from welding_app.agents.types import WeldingRequirement
 from welding_app.error.error_message import handle_tool_error
 
 from .plan_agent_tools import (
     design_welding_plan_toolkit,
-    generate_welding_plan as generate_welding_plan_tool,
     get_welding_scenario,
     query_welding_infomation,
+)
+from .plan_agent_tools import (
+    generate_welding_plan as generate_welding_plan_tool,
 )
 from .prompt import system_prompt, todo_list_prompt
 from .types import WeldingPlanResult
@@ -25,12 +28,16 @@ class WeldingPlanStructuredOutputError(RuntimeError):
 
 def create_plan_agent(response_format: type | ToolStrategy | None = None):
 
-    model = ChatDeepSeek(model="deepseek-chat", temperature=0.1, top_p=0.2)
+    model = ChatDeepSeek(model="deepseek-chat", temperature=0.1)
 
     plan_agent = create_agent(
         model=model,
         system_prompt=system_prompt(),
-        tools=[generate_welding_plan_tool, query_welding_infomation, get_welding_scenario]
+        tools=[
+            generate_welding_plan_tool,
+            query_welding_infomation,
+            get_welding_scenario,
+        ]
         + design_welding_plan_toolkit(),
         middleware=[
             handle_tool_error,
@@ -52,7 +59,9 @@ def _format_requirements(requirements: list[WeldingRequirement]) -> str:
 
     lines = []
     for i, req in enumerate(requirements, 1):
-        lines.append(f"{i}. [{importance_label[req.importance.value]}优先级] {req.content}")
+        lines.append(
+            f"{i}. [{importance_label[req.importance.value]}优先级] {req.content}"
+        )
         if req.target_object:
             lines.append(f"   - 目标对象: {req.target_object}")
         if req.additional_info:
@@ -97,18 +106,19 @@ def run_welding_plan_design(
 ## 额外信息
 {additional_info or "无"}
 
+# 最重要的内容
+!!! 一定要完整运行一次设计流程，将最终的设计结果结构化输出，不要半途而费 !!!
+
 ---
 请按照你的工作流程完成焊接方案的设计。"""
 
-    agent = create_plan_agent(response_format=ToolStrategy(WeldingPlanResult))
+    agent = create_plan_agent(response_format=ToolStrategy(schema=WeldingPlanResult))
     result = agent.invoke(
         {"messages": [HumanMessage(content=task_prompt)]},
-        {
-            "configurable": {"thread_id": str(uuid.uuid4())},
-            "recursion_limit": 100,
-        },
+        agent_config(thread_id=str(uuid.uuid4())),  # type: ignore
     )
-
+    print("------------------plan agent输出：-----------------")
+    print(result)
     structured_response = result.get("structured_response")
     if structured_response is None:
         raise WeldingPlanStructuredOutputError(
@@ -119,21 +129,21 @@ def run_welding_plan_design(
 
 
 if __name__ == "__main__":
-    pass
-    # import mlflow
-    # from langchain.messages import HumanMessage
+    import mlflow
+    from langchain.messages import HumanMessage
 
-    # mlflow.set_tracking_uri("http://127.0.0.1:5000")
-    # mlflow.set_experiment("plan_agent v2")
-    # mlflow.autolog()
+    mlflow.set_tracking_uri("http://127.0.0.1:5000")
+    mlflow.set_experiment("plan_agent v3")
+    mlflow.autolog()
 
-    # agent = create_plan_agent()
-    # while True:
-    #     human_input = input("Human: ")
-    #     if human_input in {"q", "quit", "exit"}:
-    #         break
-    #     result = agent.invoke(
-    #         {"messages": [HumanMessage(content=human_input)]},
-    #         {"configurable": {"thread_id": 1}},
-    #     )
-    #     print("AI: ", result["messages"][-1].content)
+    agent = create_plan_agent(response_format=ToolStrategy(schema=WeldingPlanResult))
+    while True:
+        human_input = input("Human: ")
+        if human_input in {"q", "quit", "exit"}:
+            break
+        result = agent.invoke(
+            {"messages": [HumanMessage(content=human_input)]},
+            agent_config(thread_id=1),  # type: ignore
+        )
+        print("AI: ", result["messages"][-1].content)
+        print("structured_response: ", result.get("structured_response"))

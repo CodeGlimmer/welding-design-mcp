@@ -131,6 +131,75 @@ class AddWeldSeamInput(BaseModel):
     name: Annotated[Optional[str], Field(description="焊缝的自定义名称")] = None
 
 
+def _new_uuid() -> str:
+    return str(uuid.uuid4())
+
+
+def _point_key(point: GeometryPointModel) -> tuple[float, float, float]:
+    return (round(point.x, 9), round(point.y, 9), round(point.z, 9))
+
+
+def _ensure_point_id(
+    point: GeometryPointModel,
+    point_id_by_position: dict[tuple[float, float, float], str] | None = None,
+) -> None:
+    if point_id_by_position is None:
+        if not point.id:
+            point.id = _new_uuid()
+        return
+
+    key = _point_key(point)
+    if point.id:
+        existing_id = point_id_by_position.setdefault(key, point.id)
+        point.id = existing_id
+        return
+
+    point.id = point_id_by_position.setdefault(key, _new_uuid())
+
+
+def _ensure_solder_joint_model_id(
+    solder_joint: SolderJointModel,
+    point_id_by_position: dict[tuple[float, float, float], str] | None = None,
+) -> None:
+    _ensure_point_id(solder_joint.position, point_id_by_position)
+
+
+def _ensure_line_model_ids(
+    line: GeometryStraightLineModel,
+    point_id_by_position: dict[tuple[float, float, float], str] | None = None,
+) -> None:
+    if not line.id:
+        line.id = _new_uuid()
+    _ensure_point_id(line.start_point, point_id_by_position)
+    _ensure_point_id(line.end_point, point_id_by_position)
+
+
+def _ensure_weld_seam_model_ids(
+    weld_seam: WeldSeamModel,
+    point_id_by_position: dict[tuple[float, float, float], str],
+) -> None:
+    if not weld_seam.id:
+        weld_seam.id = _new_uuid()
+    if weld_seam.line:
+        _ensure_line_model_ids(weld_seam.line, point_id_by_position)
+    for solder_joint in weld_seam.solder_joints:
+        _ensure_solder_joint_model_id(solder_joint, point_id_by_position)
+
+
+def _ensure_scenario_model_ids(
+    scenario_model: WeldingScenarioModel,
+) -> WeldingScenarioModel:
+    point_id_by_position: dict[tuple[float, float, float], str] = {}
+
+    for solder_joint in scenario_model.solder_joints:
+        _ensure_solder_joint_model_id(solder_joint, point_id_by_position)
+
+    for weld_seam in scenario_model.weld_seams:
+        _ensure_weld_seam_model_ids(weld_seam, point_id_by_position)
+
+    return scenario_model
+
+
 # ============== Tools ==============
 
 
@@ -268,9 +337,7 @@ def generate_scenario_builder_toolkit():
         """添加一个焊点"""
         nonlocal welding_scenario, welding_scenario_history
 
-        if not welding_scenario:
-            welding_scenario = set()
-
+        _ensure_point_id(position)
         solder_joint: SolderJoint = SolderJointModel(
             position=position,
             base_material=base_material,
@@ -320,11 +387,9 @@ def generate_scenario_builder_toolkit():
         """批量添加多个焊点到当前场景"""
         nonlocal welding_scenario, welding_scenario_history
 
-        if not welding_scenario:
-            welding_scenario = set()
-
         added_joints = []
         for item in solder_joints:
+            _ensure_point_id(item.position)
             solder_joint = SolderJointModel(
                 position=item.position,
                 base_material=item.base_material,
@@ -382,8 +447,12 @@ def generate_scenario_builder_toolkit():
         """添加一条焊缝到当前场景"""
         nonlocal welding_scenario, welding_scenario_history
 
-        if not welding_scenario:
-            welding_scenario = set()
+        if not id:
+            id = _new_uuid()
+        point_id_by_position: dict[tuple[float, float, float], str] = {}
+        _ensure_line_model_ids(line, point_id_by_position)
+        for solder_joint in solder_joints:
+            _ensure_solder_joint_model_id(solder_joint, point_id_by_position)
 
         weld_seam_model = WeldSeamModel(
             id=id,
@@ -521,7 +590,9 @@ def generate_scenario_builder_toolkit():
         """保存当前场景到数据库"""
         nonlocal welding_scenario
 
-        scenario_model = WeldingScenarioModel.from_welding_scenario(welding_scenario)
+        scenario_model = _ensure_scenario_model_ids(
+            WeldingScenarioModel.from_welding_scenario(welding_scenario)
+        )
         scenario_id = str(uuid.uuid4())
 
         db_path = (

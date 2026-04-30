@@ -10,6 +10,7 @@ from welding_app.prompts.to_main_agent import (
 )
 
 from .main_agent_tools import execute_welding_task
+from .runtime_config import agent_config
 
 
 def create_main_agent():
@@ -42,7 +43,7 @@ def main():
     agent = create_main_agent()
     res = agent.invoke(
         input={"messages": [HumanMessage(content="你好")]},
-        config={"configurable": {"thread_id": "1"}},
+        config=agent_config(thread_id="1"),  # type: ignore
     )
     print(res["messages"][-1].content)
 

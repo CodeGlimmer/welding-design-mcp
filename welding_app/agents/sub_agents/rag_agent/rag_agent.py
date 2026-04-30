@@ -1,6 +1,7 @@
 from langchain.agents import create_agent
 from langchain_deepseek import ChatDeepSeek
 
+from welding_app.agents.runtime_config import agent_config
 from welding_app.error.error_message import handle_tool_error
 
 from .prompt import system_prompt
@@ -35,6 +36,7 @@ if __name__ == "__main__":
             "messages": [
                 {"role": "user", "content": "蛋炒饭怎么做？"},
             ]
-        }
+        },
+        agent_config(),  # type: ignore
     )
     print(result["messages"][-1])

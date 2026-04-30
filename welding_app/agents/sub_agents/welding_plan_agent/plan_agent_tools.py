@@ -9,6 +9,7 @@ from pathlib import Path
 from langchain.messages import HumanMessage
 from langchain.tools import tool
 
+from welding_app.agents.runtime_config import agent_config
 from welding_app.agents.sub_agents.rag_agent.rag_agent import create_rag_agent
 from welding_app.algorithm.sort_algo.solder_joint_sort import sort_solder_joints
 from welding_app.algorithm.sort_algo.welding_seam_sort import (
@@ -45,6 +46,56 @@ from .types import (
     SetWeldingSortPlanInputModel,
     ShowCurrentWeldingObjectOutputModel,
 )
+
+
+def _new_uuid() -> str:
+    return str(uuid.uuid4())
+
+
+def _ensure_solder_joint_id(solder_joint) -> None:
+    if solder_joint and solder_joint.position and not solder_joint.position.id:
+        solder_joint.position.id = _new_uuid()
+
+
+def _ensure_weld_seam_ids(weld_seam: WeldSeamModel) -> None:
+    if not weld_seam.id:
+        weld_seam.id = _new_uuid()
+    if weld_seam.line:
+        if not weld_seam.line.id:
+            weld_seam.line.id = _new_uuid()
+        if weld_seam.line.start_point and not weld_seam.line.start_point.id:
+            weld_seam.line.start_point.id = _new_uuid()
+        if weld_seam.line.end_point and not weld_seam.line.end_point.id:
+            weld_seam.line.end_point.id = _new_uuid()
+    for solder_joint in weld_seam.solder_joints:
+        _ensure_solder_joint_id(solder_joint)
+
+
+def _ensure_scenario_ids(scenario_model: WeldingScenarioModel) -> WeldingScenarioModel:
+    for solder_joint in scenario_model.solder_joints:
+        _ensure_solder_joint_id(solder_joint)
+    for weld_seam in scenario_model.weld_seams:
+        _ensure_weld_seam_ids(weld_seam)
+    return scenario_model
+
+
+def _ensure_sort_plan_ids(
+    sort_plan: WeldingSequenceSortModel,
+) -> WeldingSequenceSortModel:
+    plan = sort_plan.sequence_plan
+    if isinstance(plan, SolderJointsSortModel):
+        for solder_joint in plan.solder_joint_sort:
+            _ensure_solder_joint_id(solder_joint)
+    elif isinstance(plan, SolderJointMixedWeldSeamSortModel):
+        for solder_joint in plan.solder_joints_sort.solder_joint_sort:
+            _ensure_solder_joint_id(solder_joint)
+        for weld_seam_sort in plan.weld_seam_sort.welding_seam_sort:
+            if not weld_seam_sort.seam_id:
+                weld_seam_sort.seam_id = _new_uuid()
+            for start_joint, end_joint in weld_seam_sort.sub_seam_sort:
+                _ensure_solder_joint_id(start_joint)
+                _ensure_solder_joint_id(end_joint)
+    return sort_plan
 
 
 def _determine_sort_axis(point1, point2) -> int:
@@ -177,8 +228,8 @@ def generate_welding_plan(scenario_id: str) -> WeldingSequenceSortModel:
     """根据场景id获取场景对象，从而对场景中的焊点，焊缝的焊接顺序作出规划"""
 
     # 从数据库获取场景
-    scenario_model = WeldingScenarioModel.model_validate_json(
-        _fetch_scenario_from_db(scenario_id)
+    scenario_model = _ensure_scenario_ids(
+        WeldingScenarioModel.model_validate_json(_fetch_scenario_from_db(scenario_id))
     )
 
     if not scenario_model.weld_seams:
@@ -292,7 +343,10 @@ def query_welding_infomation(query: str) -> str:
             retryable=False,
         )
     try:
-        result = rag_agent.invoke({"messages": [HumanMessage(content=query)]})
+        result = rag_agent.invoke(
+            {"messages": [HumanMessage(content=query)]},
+            agent_config(),  # type: ignore
+        )
     except Exception as e:
         raise ToolException(
             message=str(e),
@@ -389,6 +443,7 @@ def design_welding_plan_toolkit():
         sort_plan: WeldingSequenceSortModel, welding_scenario_id: str
     ) -> str:
         """传入焊接工艺方案的顺序，即generate_welding_plan与agent审核后的结果"""
+        _ensure_sort_plan_ids(sort_plan)
         _welding_plan.welding_sort_plan = sort_plan
         _welding_plan.nav = WeldingSequenceNavigator(sort_plan)
 
@@ -399,8 +454,10 @@ def design_welding_plan_toolkit():
             _welding_plan.scenario_type = ScenarioType.SolderJointMixedWeldSeam
 
         # 绑定具体的焊接场景
-        _welding_plan.welding_scenario = WeldingScenarioModel.model_validate_json(
-            _fetch_scenario_from_db(welding_scenario_id)
+        _welding_plan.welding_scenario = _ensure_scenario_ids(
+            WeldingScenarioModel.model_validate_json(
+                _fetch_scenario_from_db(welding_scenario_id)
+            )
         )
 
         # 初始化焊接工艺方案
@@ -499,8 +556,11 @@ def design_welding_plan_toolkit():
         if process_type == "spot_welding":
             # 设置点焊的工艺参数
             try:
+                current_task = _welding_plan.nav.current()  # type: ignore
+                if not current_task or current_task.task_type != "solder_joint":
+                    raise ValueError("当前任务不是焊点，无法设置点焊参数")
                 process = ProcessAssignmentModel(
-                    entity_id=_welding_plan.nav.current().solder_joint.position.id,  # type: ignore
+                    entity_id=current_task.param_entity_id,
                     params=process_params,
                 )
             except Exception as e:
@@ -671,7 +731,7 @@ def design_welding_plan_toolkit():
 
             # 序列化工艺分配表 - 使用 model_dump_json 确保一致性
             process_assignments_list = [
-                assignment.model_dump(mode='json')
+                assignment.model_dump(mode="json")
                 for assignment in _welding_plan.welding_plan.process_assignments
             ]
             process_assignments_json = json.dumps(process_assignments_list)

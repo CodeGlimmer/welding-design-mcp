@@ -1,11 +1,12 @@
-import mlflow
+# import mlflow
 from langchain_core.messages import HumanMessage
 
 from welding_app.agents.main_agent import create_main_agent
+from welding_app.agents.runtime_config import agent_config
 
-mlflow.set_tracking_uri("http://127.0.0.1:5000")
-mlflow.set_experiment("version 1")
-mlflow.autolog()
+# mlflow.set_tracking_uri("http://127.0.0.1:5000")
+# mlflow.set_experiment("version 4")
+# mlflow.autolog()
 
 
 def main():
@@ -16,7 +17,7 @@ def main():
             break
         result = agent.invoke(
             {"messages": [HumanMessage(content=human_input)]},
-            {"configurable": {"thread_id": 1}},
+            agent_config(thread_id=1),
         )
         print("AI: ", result["messages"][-1].content)
 
