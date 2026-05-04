@@ -11,7 +11,7 @@ from .rag_agent_tools import retriever
 def create_rag_agent():
     """工具型知识库检索agent，不会保留长期记忆"""
     model = ChatDeepSeek(
-        model="deepseek-v4-flash",
+        model="deepseek-v4-pro",
         temperature=0.1,
         extra_body={"thinking": {"type": "enabled"}},
     )

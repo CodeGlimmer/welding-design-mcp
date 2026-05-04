@@ -10,7 +10,11 @@ from .types import CheckerOutput
 
 def create_checker_agent():
     """配置检查场景解析结果的智能体"""
-    model = ChatDeepSeek(model="deepseek-chat", temperature=0.1)
+    model = ChatDeepSeek(
+        model="deepseek-v4-pro",
+        temperature=0.1,
+        extra_body={"thinking": {"type": "disabled"}},
+    )
     system_prompt_path = (
         Path(__file__).parent.parent.parent.parent
         / "prompts"

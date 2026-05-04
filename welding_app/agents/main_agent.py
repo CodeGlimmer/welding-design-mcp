@@ -18,8 +18,9 @@ def create_main_agent():
 
     # 初始化deepseek model
     model = ChatDeepSeek(
-        model="deepseek-chat",
+        model="deepseek-v4-pro",
         temperature=0.1,
+        extra_body={"thinking": {"type": "enabled"}},
     )
 
     agent = create_agent(

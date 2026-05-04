@@ -16,7 +16,11 @@ from .types import ParsingAgentOutput
 
 def create_parsing_agent():
     """配置解析场景文件的智能体"""
-    model = ChatDeepSeek(model="deepseek-chat", temperature=0.1)
+    model = ChatDeepSeek(
+        model="deepseek-v4-pro",
+        temperature=0.1,
+        extra_body={"thinking": {"type": "disabled"}},
+    )
 
     agent = create_agent(
         model=model,

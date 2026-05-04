@@ -25,7 +25,11 @@ class WeldingPlanStructuredOutputError(RuntimeError):
 
 def create_plan_agent(response_format: type | ToolStrategy | None = None):
 
-    model = ChatDeepSeek(model="deepseek-chat", temperature=0.1)
+    model = ChatDeepSeek(
+        model="deepseek-v4-pro",
+        temperature=0.1,
+        extra_body={"thinking": {"type": "disabled"}},
+    )
 
     plan_agent = create_agent(
         model=model,
